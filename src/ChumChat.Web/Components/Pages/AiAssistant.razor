@@ -1,0 +1,487 @@
+@page "/tro-ly-ai"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@using ChumChat.Web.Channels
+@using ChumChat.Web.Data
+@using ChumChat.Web.Services
+@inject ChannelSettingsStore Store
+@inject AiKnowledgeService Knowledge
+@inject AutoReplyService AutoReply
+@inject IWebHostEnvironment HostEnv
+
+<PageTitle>Trợ lý AI — ChumChat</PageTitle>
+
+<div class="settings">
+    <div class="settings-header">
+        <h1>✨ Trợ lý AI</h1>
+        <a href="/">← Về Hộp thư</a>
+    </div>
+
+    @if (banner is not null)
+    {
+        <div class="banner @(bannerIsError ? "banner-error" : "banner-ok")">@banner</div>
+    }
+
+    <p class="settings-hint">
+        Cấu hình để nút <b>✨ Gợi ý AI</b> trong khung chat soạn câu trả lời đúng với tiệm của bạn.
+        AI đọc thông tin tiệm, câu hỏi thường gặp và <b>ảnh tư liệu</b> (menu, bảng giá...) để trả lời khách.
+    </p>
+
+    @* ===== KẾT NỐI ===== *@
+    <section class="channel-card">
+        <header>
+            <span class="channel-dot" style="background:#d4820a"></span>
+            <h2>🤖 Nhà cung cấp AI</h2>
+            @if (!string.IsNullOrEmpty(ai.ApiKey))
+            {
+                <span class="status-badge connected">Đã bật</span>
+            }
+            else
+            {
+                <span class="status-badge disconnected">Chưa cấu hình</span>
+            }
+        </header>
+        <div class="provider-tabs">
+            @foreach (var (key, label) in Providers)
+            {
+                <button class="provider-tab @(ai.Provider == key ? "active" : "")" @onclick="() => ChooseProvider(key)">
+                    @label
+                </button>
+            }
+        </div>
+        <details class="guide">
+            <summary>📖 Cách lấy API key cho @ProviderLabel</summary>
+            <div class="guide-inner">@((MarkupString)ProviderGuide)</div>
+        </details>
+        <div class="fields">
+            <label>API Key <input type="password" @bind="ai.ApiKey" placeholder="@KeyPlaceholder" /></label>
+            <label>Model
+                <select @bind="ai.Model">
+                    @foreach (var (val, label) in ModelOptions)
+                    {
+                        <option value="@val">@label</option>
+                    }
+                </select>
+            </label>
+        </div>
+        @if (ai.Provider == "deepseek")
+        {
+            <p class="settings-hint">⚠ DeepSeek chỉ đọc chữ (không xem được ảnh tư liệu). Cần AI nhìn ảnh thì chọn Claude, ChatGPT hoặc Gemini.</p>
+        }
+        <div class="actions">
+            <button class="btn-save" @onclick="SaveConnection">Lưu</button>
+        </div>
+    </section>
+
+    @* ===== THÔNG TIN TIỆM ===== *@
+    <section class="channel-card">
+        <header>
+            <span class="channel-dot" style="background:#0068ff"></span>
+            <h2>🏪 Thông tin tiệm</h2>
+        </header>
+        <p class="settings-hint">Mô tả tiệm, sản phẩm, chính sách giao hàng/đổi trả, giọng điệu xưng hô... AI dùng để trả lời đúng bối cảnh.</p>
+        <label class="full-field">
+            <textarea @bind="ai.ShopContext" rows="6"
+                      placeholder="VD: Tiệm ChumChum Bakery bán bánh sinh nhật, bánh kem, cupcake. Giao nội thành TP trong ngày, phí ship 20-40k. Đặt trước tối thiểu 4 tiếng. Đổi trả nếu bánh lỗi. Xưng 'shop', gọi khách 'bạn/anh/chị', giọng thân thiện dễ thương..."></textarea>
+        </label>
+        <div class="actions">
+            <button class="btn-save" @onclick="SaveConnection">Lưu</button>
+        </div>
+    </section>
+
+    @* ===== CÂU HỎI THƯỜNG GẶP ===== *@
+    <section class="channel-card">
+        <header>
+            <span class="channel-dot" style="background:#0f766e"></span>
+            <h2>❓ Câu hỏi thường gặp</h2>
+            <span class="status-badge connected">@faqs.Count câu</span>
+        </header>
+        <p class="settings-hint">Mỗi câu hỏi + câu trả lời chuẩn. AI ưu tiên dùng để trả lời khi khách hỏi trúng.</p>
+        <div class="faq-list">
+            @foreach (var f in faqs)
+            {
+                <div class="faq-row">
+                    <div class="faq-body">
+                        <div class="faq-q">Hỏi: @f.Question</div>
+                        <div class="faq-a">Đáp: @f.Answer</div>
+                    </div>
+                    <button class="quick-del" @onclick="() => DeleteFaq(f.Id)" title="Xóa">✕</button>
+                </div>
+            }
+        </div>
+        <h4 class="sub-head">＋ Thêm câu hỏi</h4>
+        <label class="full-field">Câu hỏi của khách
+            <input @bind="newFaqQuestion" placeholder="VD: Ship mất bao lâu?" />
+        </label>
+        <label class="full-field">Câu trả lời chuẩn
+            <textarea @bind="newFaqAnswer" rows="2" placeholder="VD: Nội thành giao trong 2-4 tiếng, phí 20-40k tùy khu vực ạ."></textarea>
+        </label>
+        <div class="actions">
+            <button class="btn-save" @onclick="AddFaq">Thêm câu hỏi</button>
+        </div>
+    </section>
+
+    @* ===== ẢNH TƯ LIỆU ===== *@
+    <section class="channel-card">
+        <header>
+            <span class="channel-dot" style="background:#a334fa"></span>
+            <h2>🖼 Ảnh tư liệu cho AI</h2>
+            <span class="status-badge connected">@images.Count ảnh</span>
+        </header>
+        <p class="settings-hint">
+            Tải lên menu, bảng giá, catalog sản phẩm... AI <b>nhìn ảnh</b> để trả lời (VD khách hỏi giá, AI đọc bảng giá).
+            Nên ghi chú rõ mỗi ảnh chứa gì. Gửi tối đa 6 ảnh mỗi lần gợi ý để tiết kiệm.
+        </p>
+        <div class="ai-image-grid">
+            @foreach (var img in images)
+            {
+                <div class="ai-image-card">
+                    <img src="@img.Url" alt="@img.Caption" />
+                    <div class="ai-image-caption">@(string.IsNullOrEmpty(img.Caption) ? "(chưa ghi chú)" : img.Caption)</div>
+                    <button class="quick-del" @onclick="() => DeleteImage(img.Id)" title="Xóa">✕ Xóa</button>
+                </div>
+            }
+        </div>
+        <h4 class="sub-head">＋ Thêm ảnh</h4>
+        <label class="full-field">Ghi chú ảnh (ảnh này chứa gì?)
+            <input @bind="newImageCaption" placeholder="VD: Bảng giá bánh kem các size" />
+        </label>
+        <div class="actions">
+            <label class="btn-save upload-label">
+                @(uploading ? "Đang tải…" : "📤 Chọn ảnh & tải lên")
+                <InputFile OnChange="OnImageUpload" accept="image/*" disabled="@uploading" />
+            </label>
+        </div>
+        @if (imageError is not null)
+        {
+            <p class="modal-error">✕ @imageError</p>
+        }
+    </section>
+
+    @* ===== KỊCH BẢN TỰ ĐỘNG GỬI FILE ===== *@
+    <section class="channel-card">
+        <header>
+            <span class="channel-dot" style="background:#c026d3"></span>
+            <h2>🤖 Tự động gửi file theo kịch bản</h2>
+            <span class="status-badge connected">@rules.Count kịch bản</span>
+        </header>
+        <p class="settings-hint">
+            Khi khách nhắn trúng <b>từ khóa</b> (hoặc AI hiểu đúng ý), bot <b>tự động gửi file</b> (PDF/ảnh) + tin kèm cho khách.
+            VD: khách hỏi "cho xin giá nhân bánh trung thu" → tự gửi bảng giá. Mỗi khách chỉ nhận lại cùng file tối đa 1 lần / 30 phút.
+        </p>
+        <div class="rule-list">
+            @foreach (var r in rules)
+            {
+                <div class="rule-row @(r.Enabled ? "" : "off")">
+                    <div class="rule-body">
+                        <div class="rule-name">
+                            @r.Name
+                            @if (!r.Enabled)
+                            {
+                                <span class="staff-badge off">Tắt</span>
+                            }
+                        </div>
+                        @if (!string.IsNullOrEmpty(r.Keywords))
+                        {
+                            <div class="rule-kw">Từ khóa: @r.Keywords</div>
+                        }
+                        @if (!string.IsNullOrEmpty(r.MatchDescription))
+                        {
+                            <div class="rule-kw">Ý định (AI): @r.MatchDescription</div>
+                        }
+                        <div class="rule-file">📎 <a href="@r.FileUrl" target="_blank">@r.FileName</a></div>
+                    </div>
+                    <div class="rule-actions">
+                        <button @onclick="() => ToggleRule(r.Id, !r.Enabled)">@(r.Enabled ? "Tắt" : "Bật")</button>
+                        <button class="quick-del" @onclick="() => DeleteRule(r.Id)" title="Xóa">✕</button>
+                    </div>
+                </div>
+            }
+        </div>
+        <h4 class="sub-head">＋ Thêm kịch bản</h4>
+        <div class="fields">
+            <label>Tên kịch bản <input @bind="newRuleName" placeholder="VD: Bảng giá nhân bánh trung thu" /></label>
+        </div>
+        <label class="full-field">Từ khóa kích hoạt (cách nhau dấu phẩy)
+            <input @bind="newRuleKeywords" placeholder="VD: giá nhân, bảng giá nhân, nhân bánh trung thu" />
+        </label>
+        <label class="full-field">Ý định để AI hiểu (tùy chọn — khi khách hỏi khác từ khóa)
+            <input @bind="newRuleDesc" placeholder="VD: khi khách hỏi giá các loại nhân bánh trung thu" />
+        </label>
+        <label class="full-field">Tin nhắn gửi kèm file (tùy chọn)
+            <textarea @bind="newRuleReplyText" rows="2" placeholder="VD: Dạ shop gửi bạn bảng giá nhân bánh trung thu 2026 ạ 🥮"></textarea>
+        </label>
+        <div class="actions">
+            <label class="btn-save upload-label">
+                @(ruleFileName is null ? "📎 Chọn file (PDF/ảnh)" : $"📎 {ruleFileName}")
+                <InputFile OnChange="OnRuleFileSelected" accept=".pdf,image/*" disabled="@savingRule" />
+            </label>
+            <button class="btn-connect" @onclick="AddRule" disabled="@(savingRule || string.IsNullOrWhiteSpace(newRuleName) || ruleFileUrl is null)">
+                @(savingRule ? "Đang lưu…" : "Lưu kịch bản")
+            </button>
+        </div>
+        @if (ruleError is not null)
+        {
+            <p class="modal-error">✕ @ruleError</p>
+        }
+    </section>
+</div>
+
+@code {
+    private AiOptions ai = new();
+    private List<AiFaq> faqs = [];
+    private List<AiKnowledgeImage> images = [];
+
+    private string newFaqQuestion = "", newFaqAnswer = "";
+    private string newImageCaption = "";
+    private bool uploading;
+    private string? imageError;
+
+    private List<AutoReplyRule> rules = [];
+    private string newRuleName = "", newRuleKeywords = "", newRuleDesc = "", newRuleReplyText = "";
+    private string? ruleFileUrl, ruleFileName, ruleFileMime;
+    private bool savingRule;
+    private string? ruleError;
+
+    private string? banner;
+    private bool bannerIsError;
+
+    private static readonly (string Key, string Label)[] Providers =
+    [
+        ("anthropic", "Claude"),
+        ("openai", "ChatGPT"),
+        ("gemini", "Gemini"),
+        ("deepseek", "DeepSeek"),
+    ];
+
+    // Model mặc định khi chọn nhà cung cấp
+    private static readonly Dictionary<string, string> DefaultModel = new()
+    {
+        ["anthropic"] = "claude-opus-4-8",
+        ["openai"] = "gpt-4o",
+        ["gemini"] = "gemini-2.5-flash",
+        ["deepseek"] = "deepseek-chat",
+    };
+
+    private string ProviderLabel => Providers.FirstOrDefault(p => p.Key == ai.Provider).Label ?? "Claude";
+
+    private (string Val, string Label)[] ModelOptions => ai.Provider switch
+    {
+        "openai" =>
+        [
+            ("gpt-4o", "GPT-4o (xem được ảnh)"),
+            ("gpt-4o-mini", "GPT-4o mini (rẻ, xem ảnh)"),
+            ("gpt-4.1", "GPT-4.1 (mạnh)"),
+        ],
+        "gemini" =>
+        [
+            ("gemini-2.5-flash", "Gemini 2.5 Flash (nhanh, rẻ)"),
+            ("gemini-2.5-pro", "Gemini 2.5 Pro (mạnh nhất)"),
+            ("gemini-2.0-flash", "Gemini 2.0 Flash"),
+        ],
+        "deepseek" =>
+        [
+            ("deepseek-chat", "DeepSeek Chat (V3)"),
+            ("deepseek-reasoner", "DeepSeek Reasoner (R1)"),
+        ],
+        _ =>
+        [
+            ("claude-opus-4-8", "Claude Opus 4.8 (thông minh nhất)"),
+            ("claude-sonnet-5", "Claude Sonnet 5 (cân bằng)"),
+            ("claude-haiku-4-5", "Claude Haiku 4.5 (rẻ, nhanh)"),
+        ],
+    };
+
+    private string KeyPlaceholder => ai.Provider switch
+    {
+        "openai" => "sk-...",
+        "gemini" => "AIza...",
+        "deepseek" => "sk-...",
+        _ => "sk-ant-...",
+    };
+
+    private string ProviderGuide => ai.Provider switch
+    {
+        "openai" =>
+            "Vào <a href='https://platform.openai.com/api-keys' target='_blank'>platform.openai.com/api-keys</a> → <b>Create new secret key</b> → copy (dạng <code>sk-...</code>). Cần nạp tiền ở mục Billing. GPT-4o/4o-mini xem được ảnh tư liệu.",
+        "gemini" =>
+            "Vào <a href='https://aistudio.google.com/apikey' target='_blank'>aistudio.google.com/apikey</a> → <b>Create API key</b> → copy (dạng <code>AIza...</code>). Có hạn mức miễn phí. Gemini xem được ảnh tư liệu.",
+        "deepseek" =>
+            "Vào <a href='https://platform.deepseek.com/api_keys' target='_blank'>platform.deepseek.com/api_keys</a> → tạo key (dạng <code>sk-...</code>). Rẻ nhất nhưng <b>không xem được ảnh</b>, chỉ đọc chữ.",
+        _ =>
+            "Vào <a href='https://console.anthropic.com' target='_blank'>console.anthropic.com</a> → <b>API Keys</b> → <b>Create Key</b> → copy (dạng <code>sk-ant-...</code>). Cần nạp tín dụng ở Billing. Claude xem được ảnh tư liệu.",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        ai = Clone(Store.Ai);
+        if (string.IsNullOrEmpty(ai.Provider))
+            ai.Provider = "anthropic";
+        faqs = await Knowledge.GetFaqsAsync();
+        images = await Knowledge.GetImagesAsync();
+        rules = await AutoReply.GetAllAsync();
+    }
+
+    private void ChooseProvider(string key)
+    {
+        if (ai.Provider == key)
+            return;
+        ai.Provider = key;
+        // Đổi nhà cung cấp thì đổi model mặc định và xóa key cũ (khác nhà cung cấp)
+        ai.Model = DefaultModel[key];
+        ai.ApiKey = "";
+    }
+
+    private async Task SaveConnection()
+    {
+        await Store.SaveAiAsync(Clone(ai));
+        banner = "✔ Đã lưu";
+        bannerIsError = false;
+    }
+
+    private async Task AddFaq()
+    {
+        if (string.IsNullOrWhiteSpace(newFaqQuestion) || string.IsNullOrWhiteSpace(newFaqAnswer))
+            return;
+        await Knowledge.AddFaqAsync(newFaqQuestion, newFaqAnswer);
+        newFaqQuestion = newFaqAnswer = "";
+        faqs = await Knowledge.GetFaqsAsync();
+    }
+
+    private async Task DeleteFaq(int id)
+    {
+        await Knowledge.DeleteFaqAsync(id);
+        faqs = await Knowledge.GetFaqsAsync();
+    }
+
+    private async Task OnImageUpload(InputFileChangeEventArgs e)
+    {
+        if (uploading)
+            return;
+        uploading = true;
+        imageError = null;
+        try
+        {
+            var file = e.File;
+            var ext = Path.GetExtension(file.Name);
+            if (string.IsNullOrEmpty(ext) || ext.Length > 5)
+                ext = ".jpg";
+            var fileName = $"{Guid.NewGuid():N}{ext}";
+            var dir = Path.Combine(HostEnv.WebRootPath, "uploads", "ai");
+            Directory.CreateDirectory(dir);
+
+            await using (var target = File.Create(Path.Combine(dir, fileName)))
+            await using (var source = file.OpenReadStream(maxAllowedSize: 15 * 1024 * 1024))
+            {
+                await source.CopyToAsync(target);
+            }
+
+            await Knowledge.AddImageAsync($"/uploads/ai/{fileName}", newImageCaption);
+            newImageCaption = "";
+            images = await Knowledge.GetImagesAsync();
+        }
+        catch (Exception ex)
+        {
+            imageError = ex.Message;
+        }
+        finally
+        {
+            uploading = false;
+        }
+    }
+
+    private async Task DeleteImage(int id)
+    {
+        await Knowledge.DeleteImageAsync(id);
+        images = await Knowledge.GetImagesAsync();
+    }
+
+    // ===== Kịch bản tự động gửi file =====
+
+    private async Task OnRuleFileSelected(InputFileChangeEventArgs e)
+    {
+        ruleError = null;
+        try
+        {
+            var file = e.File;
+            var ext = Path.GetExtension(file.Name);
+            if (string.IsNullOrEmpty(ext) || ext.Length > 6)
+                ext = ".pdf";
+            var fileName = $"{Guid.NewGuid():N}{ext}";
+            var dir = Path.Combine(HostEnv.WebRootPath, "uploads", "auto");
+            Directory.CreateDirectory(dir);
+
+            await using (var target = File.Create(Path.Combine(dir, fileName)))
+            await using (var source = file.OpenReadStream(maxAllowedSize: 25 * 1024 * 1024))
+            {
+                await source.CopyToAsync(target);
+            }
+
+            ruleFileUrl = $"/uploads/auto/{fileName}";
+            ruleFileName = file.Name;
+            ruleFileMime = string.IsNullOrEmpty(file.ContentType) ? GuessMime(ext) : file.ContentType;
+        }
+        catch (Exception ex)
+        {
+            ruleError = ex.Message;
+        }
+    }
+
+    private static string GuessMime(string ext) => ext.ToLowerInvariant() switch
+    {
+        ".pdf" => "application/pdf",
+        ".png" => "image/png",
+        ".gif" => "image/gif",
+        ".webp" => "image/webp",
+        ".jpg" or ".jpeg" => "image/jpeg",
+        _ => "application/octet-stream"
+    };
+
+    private async Task AddRule()
+    {
+        if (string.IsNullOrWhiteSpace(newRuleName) || ruleFileUrl is null)
+            return;
+        savingRule = true;
+        ruleError = null;
+        try
+        {
+            await AutoReply.SaveAsync(new AutoReplyRule
+            {
+                Name = newRuleName.Trim(),
+                Keywords = newRuleKeywords.Trim(),
+                MatchDescription = newRuleDesc.Trim(),
+                ReplyText = newRuleReplyText.Trim(),
+                FileUrl = ruleFileUrl,
+                FileName = ruleFileName ?? "file",
+                FileMime = ruleFileMime ?? "application/octet-stream",
+                Enabled = true
+            });
+            newRuleName = newRuleKeywords = newRuleDesc = newRuleReplyText = "";
+            ruleFileUrl = ruleFileName = ruleFileMime = null;
+            rules = await AutoReply.GetAllAsync();
+        }
+        catch (Exception ex)
+        {
+            ruleError = ex.Message;
+        }
+        finally
+        {
+            savingRule = false;
+        }
+    }
+
+    private async Task ToggleRule(int id, bool enabled)
+    {
+        await AutoReply.SetEnabledAsync(id, enabled);
+        rules = await AutoReply.GetAllAsync();
+    }
+
+    private async Task DeleteRule(int id)
+    {
+        await AutoReply.DeleteAsync(id);
+        rules = await AutoReply.GetAllAsync();
+    }
+
+    private static T Clone<T>(T source) =>
+        System.Text.Json.JsonSerializer.Deserialize<T>(System.Text.Json.JsonSerializer.Serialize(source))!;
+}

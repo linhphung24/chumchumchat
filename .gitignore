@@ -1,0 +1,15 @@
+bin/
+obj/
+publish/
+node_modules/
+sidecars/zalo-personal/credentials.json
+sidecars/zalo-personal/qr.png
+wwwroot/uploads/
+dataprotection-keys/
+*.user
+*.db
+*.db-shm
+*.db-wal
+appsettings.Production.json
+appsettings.*.local.json
+.vs/

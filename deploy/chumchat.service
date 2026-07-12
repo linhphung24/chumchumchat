@@ -1,0 +1,22 @@
+# Copy file này vào /etc/systemd/system/chumchat.service
+# rồi chạy: sudo systemctl daemon-reload && sudo systemctl enable --now chumchat
+
+[Unit]
+Description=ChumChat - Hop thu khach hang hop nhat
+After=network.target
+
+[Service]
+WorkingDirectory=/var/www/chumchat
+ExecStart=/var/www/chumchat/ChumChat.Web
+Restart=always
+RestartSec=5
+User=chumchat
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://localhost:5000
+# Khóa API các kênh có thể đặt ở đây thay vì appsettings.Production.json, ví dụ:
+# Environment=Channels__Zalo__AccessToken=xxx
+KillSignal=SIGINT
+SyslogIdentifier=chumchat
+
+[Install]
+WantedBy=multi-user.target

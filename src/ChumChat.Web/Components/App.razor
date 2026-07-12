@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    @* Xác thực sở hữu domain chat.chumchumbakery.com với Zalo Platform (developers.zalo.me > Xác thực domain) *@
+    <meta name="zalo-platform-site-verification" content="UlYFSx_f6r9aueDnvFSbAI3XiJNCbsHYDZGu" />
+    <base href="/" />
+    <ResourcePreloader />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="@Assets["ChumChat.Web.styles.css"]" />
+    <ImportMap />
+    <HeadOutlet />
+</head>
+
+<body>
+    <Routes />
+    <ReconnectModal />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script>
+        window.scrollToBottom = function(elementId) {
+            var el = document.getElementById(elementId);
+            if (el) {
+                el.scrollTop = el.scrollHeight;
+            }
+        };
+    </script>
+</body>
+
+</html>

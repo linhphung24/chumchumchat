@@ -1,0 +1,70 @@
+@page "/simulator"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using ChumChat.Web.Channels
+@using ChumChat.Web.Data
+@using ChumChat.Web.Services
+@inject InboxService Inbox
+
+<PageTitle>Giả lập tin nhắn — ChumChat</PageTitle>
+
+<div class="simulator">
+    <h1>🧪 Giả lập tin nhắn đến</h1>
+    <p class="hint">
+        Dùng trang này để test giao diện inbox khi chưa nối API thật.
+        Tin giả lập sẽ xuất hiện trong <a href="/">Hộp thư</a> như tin khách gửi thật.
+    </p>
+
+    <div class="sim-form">
+        <label>
+            Kênh
+            <select @bind="channel">
+                @foreach (var c in Enum.GetValues<ChannelType>())
+                {
+                    <option value="@c">@Components.Pages.Inbox.ChannelLabel(c)</option>
+                }
+            </select>
+        </label>
+
+        <label>
+            Tên khách hàng
+            <input @bind="customerName" placeholder="VD: Nguyễn Văn A" />
+        </label>
+
+        <label>
+            Nội dung tin nhắn
+            <textarea @bind="text" placeholder="VD: Shop ơi còn hàng không?"></textarea>
+        </label>
+
+        <button @onclick="SendAsync" disabled="@(string.IsNullOrWhiteSpace(customerName) || string.IsNullOrWhiteSpace(text))">
+            Gửi tin giả lập
+        </button>
+
+        @if (sentCount > 0)
+        {
+            <p class="sent-note">✔ Đã tạo @sentCount tin — xem trong <a href="/">Hộp thư</a></p>
+        }
+    </div>
+</div>
+
+@code {
+    private ChannelType channel = ChannelType.Zalo;
+    private string customerName = "";
+    private string text = "";
+    private int sentCount;
+
+    private async Task SendAsync()
+    {
+        // Cùng tên + cùng kênh → cùng một hội thoại, giống hành vi thật
+        var externalId = "sim-" + customerName.Trim().ToLowerInvariant().Replace(' ', '-');
+        await Inbox.HandleInboundAsync(channel, new InboundMessage(
+            externalId,
+            customerName.Trim(),
+            text.Trim(),
+            ExternalMessageId: Guid.NewGuid().ToString("N"),
+            SentAt: DateTime.UtcNow), simulated: true);
+
+        text = "";
+        sentCount++;
+    }
+}

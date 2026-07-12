@@ -1,0 +1,1047 @@
+@page "/"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using ChumChat.Web.Data
+@using ChumChat.Web.Services
+@inject InboxService InboxSvc
+@inject InboxEvents Events
+@inject TrelloService Trello
+@inject StaffService StaffSvc
+@inject QuickReplyService QuickReplies
+@inject AiSuggestionService Ai
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+@inject IWebHostEnvironment HostEnv
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>ChumChat — Hộp thư hợp nhất</PageTitle>
+
+<div class="inbox">
+    <aside class="conversation-list">
+        <div class="list-header">
+            <h1>ChumChat</h1>
+            <span class="header-links">
+                <a class="simulator-link" href="/simulator" title="Giả lập tin nhắn để test">🧪 Giả lập</a>
+                @if (isAdmin)
+                {
+                    <a class="simulator-link" href="/tro-ly-ai" title="Cấu hình trợ lý AI">✨ Trợ lý AI</a>
+                    <a class="simulator-link" href="/settings" title="Cấu hình kết nối các kênh">⚙ Cấu hình</a>
+                }
+            </span>
+        </div>
+
+        <div class="me-bar">
+            <span class="me-name">👤 @currentStaffName</span>
+            <span class="me-links">
+                <a href="/doi-mat-khau" title="Đổi mật khẩu">🔑</a>
+                <a class="logout-link" href="/account/logout" title="Đăng xuất">Đăng xuất</a>
+            </span>
+        </div>
+
+        <div class="channel-filters">
+            <button class="@(mineOnly ? "filter" : "filter active")" @onclick="() => SetMineOnly(false)">Tất cả</button>
+            <button class="@(mineOnly ? "filter active" : "filter")" @onclick="() => SetMineOnly(true)">Của tôi</button>
+        </div>
+        <div class="channel-filters">
+            <button class="@FilterClass(null)" @onclick="() => SetFilter(null)">Mọi kênh</button>
+            @foreach (var channel in Enum.GetValues<ChannelType>())
+            {
+                <button class="@FilterClass(channel)" @onclick="() => SetFilter(channel)">
+                    @ChannelLabel(channel)
+                </button>
+            }
+        </div>
+
+        @if (conversations.Count == 0)
+        {
+            <div class="empty-list">
+                <p>Chưa có hội thoại nào.</p>
+                <p>Vào trang <a href="/simulator">Giả lập</a> để tạo tin nhắn thử, hoặc cấu hình webhook các kênh (xem README).</p>
+            </div>
+        }
+        else
+        {
+            <div class="items">
+                @foreach (var conv in conversations)
+                {
+                    <div class="item @(conv.Id == selectedId ? "selected" : "")"
+                         @onclick="() => SelectConversation(conv.Id)">
+                        <div class="item-avatar">
+                            @if (!string.IsNullOrEmpty(conv.AvatarUrl))
+                            {
+                                <img src="@conv.AvatarUrl" alt="" loading="lazy" />
+                            }
+                            else
+                            {
+                                <span class="avatar-fallback @ChannelCss(conv.Channel)">@Initial(conv.CustomerName)</span>
+                            }
+                            <span class="channel-dot @ChannelCss(conv.Channel)" title="@ChannelLabel(conv.Channel)"></span>
+                        </div>
+                        <div class="item-body">
+                            <div class="item-top">
+                                <span class="name">@conv.CustomerName</span>
+                                <span class="time">@FormatTime(conv.LastMessageAt)</span>
+                            </div>
+                            <div class="item-bottom">
+                                <span class="preview">@conv.LastMessagePreview</span>
+                                @if (!string.IsNullOrEmpty(conv.Tag))
+                                {
+                                    <span class="tag @TagCss(conv.Tag)">@conv.Tag</span>
+                                }
+                                @if (conv.UnreadCount > 0)
+                                {
+                                    <span class="unread">@conv.UnreadCount</span>
+                                }
+                            </div>
+                            @if (conv.AssignedStaffId is int sid && staffNames.TryGetValue(sid, out var an))
+                            {
+                                <div class="item-assignee">👤 @an</div>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </aside>
+
+    <section class="chat-pane">
+        @if (selected is null)
+        {
+            <div class="no-selection">
+                <p>💬 Chọn một hội thoại để bắt đầu trả lời khách</p>
+            </div>
+        }
+        else
+        {
+            <header class="chat-header">
+                <span class="channel-badge @ChannelCss(selected.Channel)">@ChannelLabel(selected.Channel)</span>
+                <span class="chat-name">@selected.CustomerName</span>
+
+                <select class="tag-select @TagCss(selected.Tag)" value="@selected.Tag"
+                        @onchange="@(e => SetTag(e.Value?.ToString() ?? ""))">
+                    <option value="">— gắn thẻ —</option>
+                    @foreach (var tag in TagPresets)
+                    {
+                        <option value="@tag">@tag</option>
+                    }
+                </select>
+
+                <select class="assign-select" value="@(selected.AssignedStaffId?.ToString() ?? "")"
+                        @onchange="@(e => AssignTo(e.Value?.ToString()))" title="Phân công nhân viên phụ trách">
+                    <option value="">— chưa phân công —</option>
+                    @foreach (var s in staff)
+                    {
+                        <option value="@s.Id">@s.DisplayName</option>
+                    }
+                </select>
+
+                <button class="trello-btn" title="Tạo thẻ Trello từ hội thoại này (khi chốt đơn xong)"
+                        @onclick="OpenTrelloModal">
+                    📋 Tạo thẻ Trello
+                </button>
+
+                @if (trelloNote is not null)
+                {
+                    <span class="trello-note @(trelloNoteIsError ? "error" : "")">
+                        @if (trelloCardUrl is not null)
+                        {
+                            <a href="@trelloCardUrl" target="_blank">@trelloNote</a>
+                        }
+                        else
+                        {
+                            @trelloNote
+                        }
+                    </span>
+                }
+
+                @if (!InboxSvc.IsChannelConfigured(selected.Channel))
+                {
+                    <span class="not-configured" title="Vào trang Cấu hình để kết nối kênh này">
+                        Kênh chưa kết nối — trả lời chỉ hiện trong app
+                    </span>
+                }
+            </header>
+
+            <div class="messages" id="messages">
+                @foreach (var msg in messages)
+                {
+                    <div class="bubble-row @(msg.Direction == MessageDirection.Outbound ? "out" : "in")">
+                        <div class="bubble">
+                            @if (msg.AttachmentUrl is not null)
+                            {
+                                @if (IsImageUrl(msg.AttachmentUrl))
+                                {
+                                    <a href="@msg.AttachmentUrl" target="_blank">
+                                        <img class="bubble-img" src="@msg.AttachmentUrl" loading="lazy" alt="Ảnh đính kèm" />
+                                    </a>
+                                }
+                                else
+                                {
+                                    <a class="bubble-file" href="@msg.AttachmentUrl" target="_blank">📎 Mở file đính kèm</a>
+                                }
+                            }
+                            @if (!string.IsNullOrEmpty(msg.Text))
+                            {
+                                <div class="bubble-text">@msg.Text</div>
+                            }
+                            <div class="bubble-meta">
+                                @msg.SentAt.ToLocalTime().ToString("HH:mm dd/MM")
+                                @if (msg.Status == MessageStatus.Failed)
+                                {
+                                    <span class="status failed">✕ Gửi lỗi</span>
+                                }
+                                else if (msg.Status == MessageStatus.Simulated)
+                                {
+                                    <span class="status simulated">giả lập</span>
+                                }
+                            </div>
+                            @if (msg.Status == MessageStatus.Failed && !string.IsNullOrEmpty(msg.Error))
+                            {
+                                <div class="bubble-error">@msg.Error</div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <button class="scroll-to-bottom-btn" @onclick="ScrollToBottomAsync" title="Cuộn xuống cuối">⬇️</button>
+            </div>
+
+            @if (quickReplies.Count > 0 || Ai.IsConfigured)
+            {
+                <div class="quick-bar">
+                    @if (Ai.IsConfigured)
+                    {
+                        <button class="ai-chip" @onclick="SuggestWithAi" disabled="@aiLoading"
+                                title="Nhờ AI soạn câu trả lời dựa trên hội thoại">
+                            @(aiLoading ? "✨ Đang nghĩ…" : "✨ Gợi ý AI")
+                        </button>
+                    }
+                    @foreach (var qr in quickReplies)
+                    {
+                        <button class="quick-chip" title="@qr.Content" @onclick="() => InsertQuickReply(qr.Content)">
+                            @qr.Title
+                        </button>
+                    }
+                    @if (aiError is not null)
+                    {
+                        <span class="ai-error">✕ @aiError</span>
+                    }
+                </div>
+            }
+            <footer class="composer">
+                <label class="attach-btn" title="Gửi ảnh cho khách">
+                    📎
+                    <InputFile OnChange="OnImageSelected" accept="image/*" disabled="@sending" />
+                </label>
+                <textarea @bind="draft" @bind:event="oninput" @onkeydown="OnComposerKeyDown"
+                          placeholder="Nhập tin trả lời… (Enter để gửi, Shift+Enter xuống dòng)"
+                          disabled="@sending"></textarea>
+                <button @onclick="SendAsync" disabled="@(sending || string.IsNullOrWhiteSpace(draft))">
+                    @(sending ? "Đang gửi…" : "Gửi")
+                </button>
+            </footer>
+        }
+    </section>
+
+    @* ===== Cột phải: thông tin khách + tạo đơn hàng ===== *@
+    @if (selected is not null)
+    {
+        <aside class="customer-panel">
+            <div class="panel-tabs">
+                <button class="panel-tab @(activeTab == "info" ? "active" : "")"
+                        @onclick='() => activeTab = "info"'>Thông tin</button>
+                <button class="panel-tab tab-order @(activeTab == "order" ? "active" : "")"
+                        @onclick='() => activeTab = "order"'>Tạo đơn</button>
+            </div>
+
+            @if (activeTab == "info")
+            {
+                <div class="panel-section">
+                    <h3>Khách hàng</h3>
+                    <div class="panel-customer">
+                        <div class="panel-avatar">
+                            @if (!string.IsNullOrEmpty(selected.AvatarUrl))
+                            {
+                                <img src="@selected.AvatarUrl" alt="" />
+                            }
+                            else
+                            {
+                                <span class="avatar-fallback @ChannelCss(selected.Channel)">@Initial(selected.CustomerName)</span>
+                            }
+                        </div>
+                        <div class="panel-name">@selected.CustomerName</div>
+                        <span class="channel-badge @ChannelCss(selected.Channel)">@ChannelLabel(selected.Channel)</span>
+                        @if (!string.IsNullOrEmpty(selected.Tag))
+                        {
+                            <span class="tag @TagCss(selected.Tag)">@selected.Tag</span>
+                        }
+                        <div class="panel-assignee">
+                            Phụ trách:
+                            @if (selected.AssignedStaffId is int aid && staffNames.TryGetValue(aid, out var an))
+                            {
+                                <b>@an</b>
+                            }
+                            else
+                            {
+                                <span class="muted">chưa phân công</span>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section orders-section">
+                    <h3>Lịch sử đặt hàng <span class="order-count">@orders.Count</span></h3>
+                    @if (orders.Count == 0)
+                    {
+                        <p class="panel-empty">Chưa có đơn nào.</p>
+                    }
+                    else
+                    {
+                        <div class="order-list">
+                            @foreach (var order in orders)
+                            {
+                                <div class="order-item">
+                                    <div class="order-top">
+                                        <span class="order-title">@order.Title</span>
+                                        @if (order.Amount > 0)
+                                        {
+                                            <span class="order-amount">@order.Amount.ToString("N0")đ</span>
+                                        }
+                                    </div>
+                                    <div class="order-meta">
+                                        @order.CreatedAt.ToLocalTime().ToString("HH:mm dd/MM/yyyy")
+                                        @if (order.TrelloCardUrl is not null)
+                                        {
+                                            <a href="@order.TrelloCardUrl" target="_blank">Trello ↗</a>
+                                        }
+                                    </div>
+                                    @if (order.Items.Count > 0)
+                                    {
+                                        <div class="order-items-summary">
+                                            @foreach (var oi in order.Items)
+                                            {
+                                                <span class="order-item-line">@oi.ProductName ×@oi.Quantity</span>
+                                            }
+                                        </div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(order.Note))
+                                    {
+                                        <div class="order-note">@order.Note</div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="order-form">
+                    <div class="order-form-scroll">
+                        @* --- Khách hàng --- *@
+                        <div class="form-section">
+                            <h3>👤 Khách hàng</h3>
+                            <div class="form-fields">
+                                <div class="form-row customer-name-row">
+                                    <span class="customer-tag">@selected.CustomerName</span>
+                                    <span class="channel-badge sm @ChannelCss(selected.Channel)">@ChannelLabel(selected.Channel)</span>
+                                </div>
+                                <input @bind="orderPhone" placeholder="Số điện thoại" class="form-input" />
+                                <input @bind="orderAddress" placeholder="Địa chỉ giao hàng" class="form-input" />
+                            </div>
+                        </div>
+
+                        @* --- Sản phẩm --- *@
+                        <div class="form-section">
+                            <h3>📦 Sản phẩm</h3>
+                            @if (orderItems.Count > 0)
+                            {
+                                <table class="product-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Tên SP</th>
+                                            <th>SL</th>
+                                            <th>Đơn giá</th>
+                                            <th>Thành tiền</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var item in orderItems)
+                                        {
+                                            <tr>
+                                                <td class="cell-name">@item.Name</td>
+                                                <td><input type="number" @bind="item.Quantity" min="1" class="qty-input" /></td>
+                                                <td class="cell-price">@item.UnitPrice.ToString("N0")</td>
+                                                <td class="cell-total">@((item.Quantity * item.UnitPrice).ToString("N0"))</td>
+                                                <td><button class="remove-item" @onclick="() => orderItems.Remove(item)">✕</button></td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                            else
+                            {
+                                <div class="empty-products">
+                                    <div class="empty-icon">📦</div>
+                                    <p>Chưa có sản phẩm nào</p>
+                                </div>
+                            }
+
+                            <div class="product-search-bar">
+                                <input @bind="productSearch" @bind:event="oninput"
+                                       placeholder="🔍 Tìm kiếm sản phẩm" class="form-input" />
+                                <button class="btn-add-inline" @onclick="ToggleAddProduct"
+                                        title="Thêm sản phẩm mới">+</button>
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(productSearch))
+                            {
+                                <div class="product-dropdown">
+                                    @{ var filtered = FilteredProducts.ToList(); }
+                                    @if (filtered.Count > 0)
+                                    {
+                                        @foreach (var p in filtered)
+                                        {
+                                            <div class="product-option" @onclick="() => AddProductToOrder(p)">
+                                                <span>@p.Name</span>
+                                                <span class="product-opt-price">@p.Price.ToString("N0")đ</span>
+                                            </div>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <div class="product-option no-result">Không tìm thấy</div>
+                                    }
+                                </div>
+                            }
+
+                            @if (showAddProductForm)
+                            {
+                                <div class="add-product-inline">
+                                    <input @bind="newProductName" placeholder="Tên sản phẩm" class="form-input" />
+                                    <input type="number" @bind="newProductPrice" placeholder="Giá" class="form-input" />
+                                    <div class="add-product-actions">
+                                        <button class="btn-small-save" @onclick="SaveNewProduct"
+                                                disabled="@string.IsNullOrWhiteSpace(newProductName)">Thêm vào đơn</button>
+                                        <button class="btn-small-cancel" @onclick="() => showAddProductForm = false">Hủy</button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        @* --- Thanh toán --- *@
+                        <div class="form-section">
+                            <h3>💳 Thanh toán</h3>
+                            <select @bind="orderPayment" class="form-input">
+                                <option value="COD">COD (thu hộ)</option>
+                                <option value="Chuyển khoản">Chuyển khoản</option>
+                                <option value="Tiền mặt">Tiền mặt</option>
+                            </select>
+
+                            <div class="order-summary">
+                                <div class="summary-row">
+                                    <span>Tổng giá trị đơn hàng</span>
+                                    <span class="summary-value">@ItemsTotal.ToString("N0") đ</span>
+                                </div>
+                                <div class="summary-row">
+                                    <span>Phí vận chuyển</span>
+                                    <div class="summary-input-wrap">
+                                        <input type="number" @bind="orderShipping" class="summary-input" />
+                                        <span>đ</span>
+                                    </div>
+                                </div>
+                                <div class="summary-row">
+                                    <span>Giảm giá</span>
+                                    <div class="summary-input-wrap">
+                                        <input type="number" @bind="orderDiscount" class="summary-input" />
+                                        <span>đ</span>
+                                    </div>
+                                </div>
+                                <div class="summary-row total-row">
+                                    <span>Tổng thanh toán</span>
+                                    <span class="summary-grand-total">@OrderGrandTotal.ToString("N0") đ</span>
+                                </div>
+                            </div>
+
+                            <textarea @bind="orderNote" placeholder="Ghi chú nội bộ…" rows="2"
+                                      class="form-input form-textarea"></textarea>
+                        </div>
+                    </div>
+
+                    @if (orderFormError is not null)
+                    {
+                        <div class="order-form-msg error">✕ @orderFormError</div>
+                    }
+                    @if (orderFormSuccess is not null)
+                    {
+                        <div class="order-form-msg success">✔ @orderFormSuccess</div>
+                    }
+
+                    <div class="order-form-actions">
+                        <button class="btn-reset" @onclick="ResetOrderForm" disabled="@creatingOrder">Thiết lập lại</button>
+                        <button class="btn-create-order" @onclick="SubmitOrderAsync"
+                                disabled="@(creatingOrder || orderItems.Count == 0)">
+                            @(creatingOrder ? "Đang tạo…" : "Tạo đơn")
+                        </button>
+                    </div>
+                </div>
+            }
+        </aside>
+    }
+</div>
+
+@* ===== Popup xem trước thẻ Trello ===== *@
+@if (showTrelloModal && selected is not null)
+{
+    <div class="modal-overlay" @onclick="CloseTrelloModal">
+        <div class="modal" @onclick:stopPropagation="true">
+            <h2>📋 Xem trước thẻ Trello</h2>
+            <label class="modal-label">
+                Tên thẻ
+                <input @bind="trelloName" />
+            </label>
+            <label class="modal-label">
+                Nội dung
+                <textarea @bind="trelloDesc" rows="12"></textarea>
+            </label>
+            @if (trelloModalError is not null)
+            {
+                <p class="modal-error">✕ @trelloModalError</p>
+            }
+            <div class="modal-actions">
+                <button class="modal-cancel" @onclick="CloseTrelloModal" disabled="@creatingCard">Hủy</button>
+                <button class="modal-create" @onclick="ConfirmCreateTrelloCard"
+                        disabled="@(creatingCard || string.IsNullOrWhiteSpace(trelloName))">
+                    @(creatingCard ? "Đang tạo…" : "Tạo thẻ")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly string[] TagPresets = ["Đang tư vấn", "Chờ phản hồi", "Đã chốt đơn", "Hủy"];
+
+    private List<Conversation> conversations = [];
+    private List<Message> messages = [];
+    private Conversation? selected;
+    private int? selectedId;
+    private ChannelType? filter;
+    private string draft = "";
+    private bool sending;
+    private bool creatingCard;
+    private string? trelloNote;
+    private string? trelloCardUrl;
+    private bool trelloNoteIsError;
+    private bool showTrelloModal;
+    private string trelloName = "";
+    private string trelloDesc = "";
+    private string? trelloModalError;
+    private List<Order> orders = [];
+
+    private List<Staff> staff = [];
+    private Dictionary<int, string> staffNames = [];
+    private List<QuickReply> quickReplies = [];
+    private bool mineOnly;
+    private int currentStaffId;
+    private string currentStaffName = "";
+    private bool isAdmin;
+    private bool aiLoading;
+    private readonly CancellationTokenSource pollCts = new();
+    private string? aiError;
+
+    // ===== Form tạo đơn =====
+    private string activeTab = "info";
+    private string orderPhone = "";
+    private string orderAddress = "";
+    private string orderPayment = "COD";
+    private long orderShipping;
+    private long orderDiscount;
+    private string orderNote = "";
+    private List<OrderFormItem> orderItems = [];
+    private string productSearch = "";
+    private List<Product> allProducts = [];
+    private bool creatingOrder;
+    private string? orderFormError;
+    private string? orderFormSuccess;
+    private bool showAddProductForm;
+    private string newProductName = "";
+    private long newProductPrice;
+
+    private long ItemsTotal => orderItems.Sum(i => (long)i.Quantity * i.UnitPrice);
+    private long OrderGrandTotal => ItemsTotal + orderShipping - orderDiscount;
+    private IEnumerable<Product> FilteredProducts =>
+        allProducts.Where(p => p.Name.Contains(productSearch, StringComparison.OrdinalIgnoreCase)
+            || p.Sku.Contains(productSearch, StringComparison.OrdinalIgnoreCase)).Take(10);
+
+    private class OrderFormItem
+    {
+        public string Name { get; set; } = "";
+        public int Quantity { get; set; } = 1;
+        public long UnitPrice { get; set; }
+    }
+
+    private int lastRenderedMessageId = -1;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (messages.Count > 0)
+        {
+            var currentLastId = messages[^1].Id;
+            if (currentLastId != lastRenderedMessageId)
+            {
+                lastRenderedMessageId = currentLastId;
+                await JS.InvokeVoidAsync("scrollToBottom", "messages");
+            }
+        }
+    }
+
+    private async Task ScrollToBottomAsync()
+    {
+        await Task.Delay(50);
+        await JS.InvokeVoidAsync("scrollToBottom", "messages");
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var user = authState.User;
+        int.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out currentStaffId);
+        currentStaffName = user.Identity?.Name ?? "Nhân viên";
+        isAdmin = user.IsInRole("Admin");
+
+        staff = (await StaffSvc.GetAllAsync()).Where(s => s.IsActive).ToList();
+        staffNames = staff.ToDictionary(s => s.Id, s => s.DisplayName);
+        quickReplies = await QuickReplies.GetAllAsync();
+        allProducts = await InboxSvc.GetAllProductsAsync();
+
+        Events.Changed += OnInboxChanged;
+        await ReloadAsync();
+
+        // Tự động làm mới định kỳ (dự phòng khi tín hiệu realtime không tới) — cứ 6 giây tải lại
+        _ = PollLoopAsync(pollCts.Token);
+    }
+
+    private async Task PollLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(6));
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                await InvokeAsync(async () =>
+                {
+                    await ReloadAsync();
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) { /* rời trang */ }
+    }
+
+    private void OnInboxChanged()
+    {
+        // Sự kiện đến từ thread webhook → phải nhảy về sync context của circuit
+        _ = InvokeAsync(async () =>
+        {
+            await ReloadAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task ReloadAsync()
+    {
+        conversations = await InboxSvc.GetConversationsAsync(filter, mineOnly ? currentStaffId : null);
+        selected = conversations.FirstOrDefault(c => c.Id == selectedId);
+        if (selected is not null)
+        {
+            // Hội thoại đang mở trước mắt nhân viên → tin mới coi như đã đọc
+            if (selected.UnreadCount > 0)
+            {
+                await InboxSvc.MarkReadAsync(selected.Id);
+                selected.UnreadCount = 0;
+            }
+            messages = await InboxSvc.GetMessagesAsync(selected.Id);
+            orders = await InboxSvc.GetOrdersAsync(selected.Id);
+        }
+    }
+
+    private async Task SetFilter(ChannelType? channel)
+    {
+        filter = channel;
+        await ReloadAsync();
+    }
+
+    private async Task SetMineOnly(bool value)
+    {
+        mineOnly = value;
+        await ReloadAsync();
+    }
+
+    private async Task AssignTo(string? staffIdValue)
+    {
+        if (selected is null)
+            return;
+        int? staffId = int.TryParse(staffIdValue, out var id) ? id : null;
+        await InboxSvc.AssignAsync(selected.Id, staffId);
+        await ReloadAsync();
+    }
+
+    private void InsertQuickReply(string content)
+    {
+        draft = string.IsNullOrWhiteSpace(draft) ? content : draft.TrimEnd() + " " + content;
+    }
+
+    private async Task SuggestWithAi()
+    {
+        if (selected is null || aiLoading)
+            return;
+        aiLoading = true;
+        aiError = null;
+        try
+        {
+            draft = await Ai.SuggestReplyAsync(selected, messages);
+        }
+        catch (Exception ex)
+        {
+            aiError = ex.Message;
+        }
+        finally
+        {
+            aiLoading = false;
+        }
+    }
+
+    // Mặc định coi là ảnh (URL ảnh CDN của nền tảng thường không có đuôi file),
+    // trừ khi rõ ràng là tài liệu (PDF, Office, zip...)
+    private static bool IsImageUrl(string url)
+    {
+        var u = url.ToLowerInvariant();
+        foreach (var ext in new[] { ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".zip", ".rar", ".txt", ".csv" })
+            if (u.EndsWith(ext))
+                return false;
+        return true;
+    }
+
+    private static string Initial(string name) =>
+        string.IsNullOrWhiteSpace(name) ? "?" : name.TrimStart('…', ' ').Length > 0
+            ? char.ToUpperInvariant(name.TrimStart('…', ' ')[0]).ToString() : "?";
+
+    private async Task SelectConversation(int id)
+    {
+        selectedId = id;
+        trelloNote = null;
+        trelloCardUrl = null;
+        aiError = null;
+        activeTab = "info";
+        ResetOrderForm();
+        lastRenderedMessageId = -1; // Force scroll to bottom on new selection
+        await InboxSvc.MarkReadAsync(id);
+        await InboxSvc.EnsureProfileAsync(id); // lấy avatar nếu hội thoại cũ chưa có
+        await ReloadAsync();
+    }
+
+    private async Task SetTag(string tag)
+    {
+        if (selected is null)
+            return;
+        await InboxSvc.SetTagAsync(selected.Id, tag);
+        await ReloadAsync();
+    }
+
+    // Mở popup xem trước thẻ — người dùng chỉnh sửa được nội dung trước khi tạo thật
+    private void OpenTrelloModal()
+    {
+        if (selected is null)
+            return;
+
+        if (!Trello.IsConfigured)
+        {
+            trelloNote = "Chưa cấu hình Trello — vào ⚙ Cấu hình điền API Key/Token/List ID";
+            trelloNoteIsError = true;
+            return;
+        }
+
+        (trelloName, trelloDesc) = Trello.BuildCard(selected, messages);
+        trelloModalError = null;
+        showTrelloModal = true;
+    }
+
+    private void CloseTrelloModal()
+    {
+        if (!creatingCard)
+            showTrelloModal = false;
+    }
+
+    private async Task ConfirmCreateTrelloCard()
+    {
+        if (selected is null || creatingCard)
+            return;
+
+        creatingCard = true;
+        trelloModalError = null;
+        try
+        {
+            var url = await Trello.CreateCardAsync(trelloName.Trim(), trelloDesc);
+            trelloCardUrl = url;
+            trelloNote = "✔ Đã tạo thẻ — mở trên Trello";
+            trelloNoteIsError = false;
+            showTrelloModal = false;
+
+            // Chốt đơn xong: gắn thẻ trạng thái + ghi vào lịch sử đặt hàng
+            await InboxSvc.SetTagAsync(selected.Id, "Đã chốt đơn");
+            await InboxSvc.AddOrderAsync(selected.Id, trelloName.Trim(), 0, "", url);
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            trelloModalError = ex.Message;
+        }
+        finally
+        {
+            creatingCard = false;
+        }
+    }
+
+    // Nhân viên chọn ảnh → lưu vào wwwroot/uploads → gửi ngay cho khách
+    private async Task OnImageSelected(InputFileChangeEventArgs e)
+    {
+        if (selected is null || sending)
+            return;
+
+        sending = true;
+        try
+        {
+            var file = e.File;
+            var ext = Path.GetExtension(file.Name);
+            if (string.IsNullOrEmpty(ext) || ext.Length > 5)
+                ext = ".jpg";
+            var fileName = $"{Guid.NewGuid():N}{ext}";
+            var uploadsDir = Path.Combine(HostEnv.WebRootPath, "uploads");
+            Directory.CreateDirectory(uploadsDir);
+
+            await using (var target = File.Create(Path.Combine(uploadsDir, fileName)))
+            await using (var source = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024))
+            {
+                await source.CopyToAsync(target);
+            }
+
+            var bytes = await File.ReadAllBytesAsync(Path.Combine(uploadsDir, fileName));
+            var localUrl = $"/uploads/{fileName}";
+            var publicUrl = Nav.BaseUri.TrimEnd('/') + localUrl;
+
+            await InboxSvc.SendReplyAsync(selected.Id, "", new ReplyImage(localUrl, publicUrl, bytes, fileName));
+        }
+        finally
+        {
+            sending = false;
+        }
+        await ReloadAsync();
+    }
+
+    private static string TagCss(string tag) => tag switch
+    {
+        "Đang tư vấn" => "tag-blue",
+        "Chờ phản hồi" => "tag-orange",
+        "Đã chốt đơn" => "tag-green",
+        "Hủy" => "tag-gray",
+        _ => ""
+    };
+
+    private async Task OnComposerKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !e.ShiftKey)
+            await SendAsync();
+    }
+
+    private async Task SendAsync()
+    {
+        if (selected is null || string.IsNullOrWhiteSpace(draft) || sending)
+            return;
+
+        sending = true;
+        var text = draft.Trim();
+        draft = "";
+        try
+        {
+            await InboxSvc.SendReplyAsync(selected.Id, text);
+        }
+        finally
+        {
+            sending = false;
+        }
+        await ReloadAsync();
+    }
+
+    public static string ChannelLabel(ChannelType channel) => channel switch
+    {
+        ChannelType.Zalo => "Zalo",
+        ChannelType.Messenger => "Messenger",
+        ChannelType.Shopee => "Shopee",
+        ChannelType.TikTokShop => "TikTok Shop",
+        ChannelType.ZaloPersonal => "Zalo cá nhân",
+        _ => channel.ToString()
+    };
+
+    public static string ChannelCss(ChannelType channel) => channel switch
+    {
+        ChannelType.Zalo => "ch-zalo",
+        ChannelType.Messenger => "ch-messenger",
+        ChannelType.Shopee => "ch-shopee",
+        ChannelType.TikTokShop => "ch-tiktok",
+        ChannelType.ZaloPersonal => "ch-zalopersonal",
+        _ => ""
+    };
+
+    private string FilterClass(ChannelType? channel) =>
+        "filter" + (filter == channel ? " active" : "");
+
+    private static string FormatTime(DateTime utc)
+    {
+        var local = utc.ToLocalTime();
+        return local.Date == DateTime.Today ? local.ToString("HH:mm") : local.ToString("dd/MM");
+    }
+
+    // ===== Form tạo đơn: logic =====
+
+    private void AddProductToOrder(Product p)
+    {
+        var existing = orderItems.FirstOrDefault(i => i.Name == p.Name);
+        if (existing is not null)
+            existing.Quantity++;
+        else
+            orderItems.Add(new OrderFormItem { Name = p.Name, UnitPrice = p.Price, Quantity = 1 });
+        productSearch = "";
+    }
+
+    private async Task SaveNewProduct()
+    {
+        if (string.IsNullOrWhiteSpace(newProductName)) return;
+        var product = await InboxSvc.AddProductAsync(newProductName, newProductPrice);
+        allProducts.Add(product);
+        AddProductToOrder(product);
+        newProductName = "";
+        newProductPrice = 0;
+        showAddProductForm = false;
+    }
+
+    private void ToggleAddProduct()
+    {
+        showAddProductForm = !showAddProductForm;
+        newProductName = "";
+        newProductPrice = 0;
+    }
+
+    private void ResetOrderForm()
+    {
+        orderPhone = "";
+        orderAddress = "";
+        orderPayment = "COD";
+        orderShipping = 0;
+        orderDiscount = 0;
+        orderNote = "";
+        orderItems = [];
+        productSearch = "";
+        orderFormError = null;
+        orderFormSuccess = null;
+        showAddProductForm = false;
+        newProductName = "";
+        newProductPrice = 0;
+    }
+
+    private async Task SubmitOrderAsync()
+    {
+        if (selected is null || creatingOrder || orderItems.Count == 0) return;
+        creatingOrder = true;
+        orderFormError = null;
+        orderFormSuccess = null;
+        try
+        {
+            // Xây dựng nội dung thẻ Trello từ thông tin đơn hàng
+            string? trelloUrl = null;
+            var cardName = $"🧾 {selected.CustomerName} — đơn qua {ChannelLabel(selected.Channel)}";
+
+            if (Trello.IsConfigured)
+            {
+                var desc = new System.Text.StringBuilder();
+                desc.AppendLine($"**Khách hàng:** {selected.CustomerName}");
+                if (!string.IsNullOrWhiteSpace(orderPhone))
+                    desc.AppendLine($"**SĐT:** {orderPhone}");
+                if (!string.IsNullOrWhiteSpace(orderAddress))
+                    desc.AppendLine($"**Địa chỉ:** {orderAddress}");
+                desc.AppendLine($"**Kênh:** {ChannelLabel(selected.Channel)}");
+                desc.AppendLine($"**Thời điểm tạo đơn:** {DateTime.Now:HH:mm dd/MM/yyyy}");
+                desc.AppendLine();
+                desc.AppendLine("---");
+                desc.AppendLine("**📦 Sản phẩm:**");
+                desc.AppendLine("| Tên SP | SL | Đơn giá | Thành tiền |");
+                desc.AppendLine("|---|---|---|---|");
+                foreach (var item in orderItems)
+                {
+                    var lineTotal = (long)item.Quantity * item.UnitPrice;
+                    desc.AppendLine($"| {item.Name} | {item.Quantity} | {item.UnitPrice:N0}đ | {lineTotal:N0}đ |");
+                }
+                desc.AppendLine();
+                desc.AppendLine("---");
+                desc.AppendLine("**💳 Thanh toán:**");
+                desc.AppendLine($"- Tổng giá trị sản phẩm: **{ItemsTotal:N0}đ**");
+                if (orderShipping > 0)
+                    desc.AppendLine($"- Phí vận chuyển: {orderShipping:N0}đ");
+                if (orderDiscount > 0)
+                    desc.AppendLine($"- Giảm giá: -{orderDiscount:N0}đ");
+                desc.AppendLine($"- **Tổng thanh toán: {OrderGrandTotal:N0}đ**");
+                desc.AppendLine($"- Hình thức: {orderPayment}");
+                if (!string.IsNullOrWhiteSpace(orderNote))
+                {
+                    desc.AppendLine();
+                    desc.AppendLine($"**📝 Ghi chú:** {orderNote}");
+                }
+
+                trelloUrl = await Trello.CreateCardAsync(cardName, desc.ToString());
+            }
+
+            var order = new Order
+            {
+                ConversationId = selected.Id,
+                Title = cardName,
+                CustomerPhone = orderPhone,
+                CustomerAddress = orderAddress,
+                PaymentMethod = orderPayment,
+                ShippingFee = orderShipping,
+                Discount = orderDiscount,
+                Note = orderNote,
+                TrelloCardUrl = trelloUrl,
+                Items = orderItems.Select(i => new OrderItem
+                {
+                    ProductName = i.Name,
+                    Quantity = i.Quantity,
+                    UnitPrice = i.UnitPrice
+                }).ToList()
+            };
+            await InboxSvc.CreateOrderAsync(order);
+            ResetOrderForm();
+            orderFormSuccess = trelloUrl is not null
+                ? "Đã tạo đơn hàng + thẻ Trello thành công!"
+                : "Đã tạo đơn hàng thành công!";
+            await InboxSvc.SetTagAsync(selected.Id, "Đã chốt đơn");
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            orderFormError = ex.Message;
+        }
+        finally
+        {
+            creatingOrder = false;
+        }
+    }
+
+    public void Dispose()
+    {
+        Events.Changed -= OnInboxChanged;
+        pollCts.Cancel();
+        pollCts.Dispose();
+    }
+}

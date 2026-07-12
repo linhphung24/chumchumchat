@@ -1,0 +1,43 @@
+@page "/login"
+@using Microsoft.AspNetCore.Components.Web
+@attribute [AllowAnonymous]
+@inject NavigationManager Nav
+
+<PageTitle>Đăng nhập — ChumChat</PageTitle>
+
+<div class="login-page">
+    <form class="login-card" method="post" action="/account/login">
+        <h1>ChumChat</h1>
+        <p class="login-sub">Đăng nhập để vào hộp thư</p>
+
+        @if (HasError)
+        {
+            <div class="login-error">✕ Sai tên đăng nhập hoặc mật khẩu</div>
+        }
+
+        <label>
+            Tên đăng nhập
+            <input name="username" autocomplete="username" autofocus />
+        </label>
+        <label>
+            Mật khẩu
+            <input name="password" type="password" autocomplete="current-password" />
+        </label>
+        <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+        <button type="submit">Đăng nhập</button>
+
+        <p class="login-hint">Lần đầu dùng: đăng nhập <b>admin</b> / <b>admin</b> rồi đổi mật khẩu ngay.</p>
+    </form>
+</div>
+
+@code {
+    private bool HasError;
+    private string ReturnUrl = "/";
+
+    protected override void OnInitialized()
+    {
+        var query = System.Web.HttpUtility.ParseQueryString(new Uri(Nav.Uri).Query);
+        HasError = query["error"] == "1";
+        ReturnUrl = query["returnUrl"] ?? "/";
+    }
+}

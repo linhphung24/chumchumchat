@@ -1,0 +1,15 @@
+{
+  "name": "chumchat-zalo-personal",
+  "version": "1.0.0",
+  "description": "Sidecar noi Zalo ca nhan (zca-js) voi ChumChat",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "sharp": "^0.33.4",
+    "zca-js": "^2.0.0"
+  }
+}

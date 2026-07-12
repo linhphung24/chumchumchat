@@ -1,0 +1,10 @@
+@inject NavigationManager Nav
+
+@code {
+    // Chuyển hướng người chưa đăng nhập sang /login, kèm returnUrl để quay lại sau
+    protected override void OnInitialized()
+    {
+        var returnUrl = Nav.ToBaseRelativePath(Nav.Uri);
+        Nav.NavigateTo($"/login?returnUrl=/{Uri.EscapeDataString(returnUrl)}", forceLoad: true);
+    }
+}

@@ -1,0 +1,26 @@
+# Sidecar Zalo ca nhan (zca-js) — copy vao /etc/systemd/system/chumchat-zalo-personal.service
+# Truoc khi chay: copy thu muc sidecars/zalo-personal len /var/www/chumchat-zalo,
+# chay "npm install" trong do, va sua API_KEY ben duoi cho trung voi trang Cau hinh.
+#
+# Lan dau khoi dong can quet QR:
+#   sudo systemctl start chumchat-zalo-personal
+#   Mo file /var/www/chumchat-zalo/qr.png (tai ve may bang WinSCP) va quet bang Zalo dien thoai.
+#   Xem log: journalctl -u chumchat-zalo-personal -f
+
+[Unit]
+Description=ChumChat - Sidecar Zalo ca nhan (zca-js)
+After=network.target chumchat.service
+
+[Service]
+WorkingDirectory=/var/www/chumchat-zalo
+ExecStart=/usr/bin/node index.js
+Restart=always
+RestartSec=10
+User=chumchat
+Environment=PORT=3311
+Environment=API_KEY=doi-chuoi-nay-cho-trung-voi-trang-cau-hinh
+Environment=CHUMCHAT_URL=http://localhost:5000
+SyslogIdentifier=chumchat-zalo
+
+[Install]
+WantedBy=multi-user.target

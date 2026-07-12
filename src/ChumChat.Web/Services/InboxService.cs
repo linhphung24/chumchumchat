@@ -1,0 +1,410 @@
+using ChumChat.Web.Channels;
+using ChumChat.Web.Data;
+using Microsoft.EntityFrameworkCore;
+
+namespace ChumChat.Web.Services;
+
+// Ảnh nhân viên đính kèm khi trả lời: LocalUrl để hiển thị trong app,
+// PublicUrl cho kênh dùng URL trực tiếp, Bytes cho kênh bắt buộc upload riêng
+public record ReplyImage(string LocalUrl, string PublicUrl, byte[] Bytes, string FileName);
+
+public class InboxService(
+    IDbContextFactory<AppDbContext> dbFactory,
+    IEnumerable<IChannelAdapter> adapters,
+    InboxEvents events,
+    ILogger<InboxService> logger)
+{
+    // Trả về Id hội thoại nếu đã lưu tin mới; null nếu là webhook trùng (bỏ qua).
+    public async Task<int?> HandleInboundAsync(ChannelType channel, InboundMessage inbound, bool simulated = false)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        var conversation = await db.Conversations
+            .FirstOrDefaultAsync(c => c.Channel == channel && c.ExternalId == inbound.ExternalConversationId);
+
+        var isNew = conversation is null;
+        if (conversation is null)
+        {
+            conversation = new Conversation
+            {
+                Channel = channel,
+                ExternalId = inbound.ExternalConversationId,
+                CustomerName = inbound.CustomerName
+            };
+            db.Conversations.Add(conversation);
+        }
+        else if (!string.IsNullOrEmpty(inbound.CustomerName) && !inbound.CustomerName.Contains('…'))
+        {
+            // Tên chứa '…' là placeholder do adapter tự sinh (kênh không gửi kèm tên thật)
+            // → không ghi đè lên tên đã có
+            conversation.CustomerName = inbound.CustomerName;
+        }
+
+        // Nền tảng có thể gửi lại webhook (retry) → chặn trùng theo mã tin nhắn gốc
+        if (!string.IsNullOrEmpty(inbound.ExternalMessageId))
+        {
+            var exists = await db.Messages.AnyAsync(m =>
+                m.ConversationId == conversation.Id && m.ExternalMessageId == inbound.ExternalMessageId);
+            if (exists)
+            {
+                logger.LogDebug("{Channel}: tin {MsgId} đã có, bỏ qua", channel, inbound.ExternalMessageId);
+                return null;
+            }
+        }
+
+        conversation.Messages.Add(new Message
+        {
+            Direction = MessageDirection.Inbound,
+            Status = simulated ? MessageStatus.Simulated : MessageStatus.Sent,
+            Text = inbound.Text,
+            AttachmentUrl = inbound.AttachmentUrl,
+            ExternalMessageId = inbound.ExternalMessageId,
+            SentAt = inbound.SentAt
+        });
+        conversation.LastMessageAt = inbound.SentAt;
+        conversation.LastMessagePreview = Truncate(
+            string.IsNullOrEmpty(inbound.Text) && inbound.AttachmentUrl is not null ? "📷 Hình ảnh" : inbound.Text, 80);
+        conversation.UnreadCount++;
+
+        await db.SaveChangesAsync();
+        events.NotifyChanged();
+
+        if (!simulated)
+            logger.LogInformation("{Channel}: đã lưu tin mới từ {Name} (msg {MsgId})",
+                channel, conversation.CustomerName, inbound.ExternalMessageId ?? "-");
+
+        // Hội thoại mới (không phải giả lập): lấy tên + avatar thật của khách ở chế độ nền,
+        // không chặn luồng webhook. Xong thì lưu lại và báo UI cập nhật.
+        if (isNew && !simulated)
+            _ = FetchAndSaveProfileAsync(channel, conversation.Id, inbound.ExternalConversationId);
+
+        return conversation.Id;
+    }
+
+    // Bổ sung avatar cho hội thoại cũ (tạo trước khi có tính năng, hoặc lần trước lấy hụt)
+    public async Task EnsureProfileAsync(int conversationId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var conv = await db.Conversations.AsNoTracking().FirstOrDefaultAsync(c => c.Id == conversationId);
+        if (conv is null || !string.IsNullOrEmpty(conv.AvatarUrl))
+            return;
+        var adapter = adapters.First(a => a.Channel == conv.Channel);
+        if (!adapter.IsConfigured)
+            return;
+        _ = FetchAndSaveProfileAsync(conv.Channel, conv.Id, conv.ExternalId);
+    }
+
+    private async Task FetchAndSaveProfileAsync(ChannelType channel, int conversationId, string externalId)
+    {
+        try
+        {
+            var adapter = adapters.First(a => a.Channel == channel);
+            var profile = await adapter.FetchProfileAsync(externalId);
+            if (profile is null || (string.IsNullOrEmpty(profile.Name) && string.IsNullOrEmpty(profile.AvatarUrl)))
+                return;
+
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var conversation = await db.Conversations.FirstOrDefaultAsync(c => c.Id == conversationId);
+            if (conversation is null)
+                return;
+            if (!string.IsNullOrEmpty(profile.Name))
+                conversation.CustomerName = profile.Name;
+            if (!string.IsNullOrEmpty(profile.AvatarUrl))
+                conversation.AvatarUrl = profile.AvatarUrl;
+            await db.SaveChangesAsync();
+            events.NotifyChanged();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Lấy profile khách {Channel}/{Id} thất bại", channel, externalId);
+        }
+    }
+
+    // Gửi trả lời (văn bản hoặc ảnh): đẩy qua API của kênh tương ứng rồi lưu lại.
+    // Kênh chưa cấu hình credentials → lưu ở trạng thái Simulated (chỉ hiện trong app).
+    public async Task<Message> SendReplyAsync(int conversationId, string text, ReplyImage? image = null)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var conversation = await db.Conversations.FirstAsync(c => c.Id == conversationId);
+        var adapter = adapters.First(a => a.Channel == conversation.Channel);
+
+        var message = new Message
+        {
+            ConversationId = conversationId,
+            Direction = MessageDirection.Outbound,
+            Text = text,
+            AttachmentUrl = image?.LocalUrl,
+            SentAt = DateTime.UtcNow
+        };
+
+        if (!adapter.IsConfigured)
+        {
+            message.Status = MessageStatus.Simulated;
+        }
+        else
+        {
+            try
+            {
+                // Lưu message_id nền tảng cấp để lần đồng bộ sau không nhân đôi tin này
+                message.ExternalMessageId = image is not null
+                    ? await adapter.SendImageAsync(conversation, image.PublicUrl, image.Bytes, image.FileName)
+                    : await adapter.SendTextAsync(conversation, text);
+                message.Status = MessageStatus.Sent;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Gửi tin thất bại qua {Channel}", conversation.Channel);
+                message.Status = MessageStatus.Failed;
+                message.Error = ex.Message;
+            }
+        }
+
+        db.Messages.Add(message);
+        conversation.LastMessageAt = message.SentAt;
+        conversation.LastMessagePreview = Truncate(image is not null && string.IsNullOrEmpty(text) ? "📷 Hình ảnh" : text, 80);
+        await db.SaveChangesAsync();
+        events.NotifyChanged();
+        return message;
+    }
+
+    // ===== Lịch sử đặt hàng =====
+
+    public async Task<List<Order>> GetOrdersAsync(int conversationId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.Orders.AsNoTracking()
+            .Include(o => o.Items)
+            .Where(o => o.ConversationId == conversationId)
+            .OrderByDescending(o => o.CreatedAt)
+            .ToListAsync();
+    }
+
+    public async Task AddOrderAsync(int conversationId, string title, long amount, string note, string? trelloCardUrl = null)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        db.Orders.Add(new Order
+        {
+            ConversationId = conversationId,
+            Title = title,
+            Amount = amount,
+            Note = note,
+            TrelloCardUrl = trelloCardUrl,
+            CreatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+        events.NotifyChanged();
+    }
+
+    // Tạo đơn hàng đầy đủ với danh sách sản phẩm (form tạo đơn kiểu Pancake)
+    public async Task<Order> CreateOrderAsync(Order order)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        // Tính tổng tiền từ items
+        var itemsTotal = order.Items.Sum(i => (long)i.Quantity * i.UnitPrice);
+        order.Amount = itemsTotal + order.ShippingFee - order.Discount;
+        order.CreatedAt = DateTime.UtcNow;
+
+        // Tạo title tự động nếu chưa có
+        if (string.IsNullOrWhiteSpace(order.Title))
+        {
+            var conv = await db.Conversations.AsNoTracking()
+                .FirstOrDefaultAsync(c => c.Id == order.ConversationId);
+            order.Title = $"Đơn hàng — {conv?.CustomerName ?? "Khách"}";
+        }
+
+        db.Orders.Add(order);
+        await db.SaveChangesAsync();
+        events.NotifyChanged();
+        return order;
+    }
+
+    // ===== Quản lý sản phẩm =====
+
+    public async Task<List<Product>> GetAllProductsAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.Products.AsNoTracking()
+            .Where(p => p.IsActive)
+            .OrderBy(p => p.Name)
+            .ToListAsync();
+    }
+
+    public async Task<List<Product>> SearchProductsAsync(string keyword)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var kw = keyword.Trim().ToLower();
+        return await db.Products.AsNoTracking()
+            .Where(p => p.IsActive &&
+                (p.Name.ToLower().Contains(kw) || p.Sku.ToLower().Contains(kw)))
+            .OrderBy(p => p.Name)
+            .Take(20)
+            .ToListAsync();
+    }
+
+    public async Task<Product> AddProductAsync(string name, long price, string sku = "")
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var product = new Product
+        {
+            Name = name.Trim(),
+            Price = price,
+            Sku = sku.Trim(),
+            IsActive = true
+        };
+        db.Products.Add(product);
+        await db.SaveChangesAsync();
+        return product;
+    }
+
+    public async Task<List<Conversation>> GetConversationsAsync(ChannelType? channel = null, int? assignedStaffId = null)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var query = db.Conversations.AsNoTracking();
+        if (channel is not null)
+            query = query.Where(c => c.Channel == channel);
+        if (assignedStaffId is not null)
+            query = query.Where(c => c.AssignedStaffId == assignedStaffId);
+        return await query.OrderByDescending(c => c.LastMessageAt).ToListAsync();
+    }
+
+    public async Task<List<Message>> GetMessagesAsync(int conversationId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.Messages.AsNoTracking()
+            .Where(m => m.ConversationId == conversationId)
+            .OrderBy(m => m.SentAt).ThenBy(m => m.Id)
+            .ToListAsync();
+    }
+
+    public async Task MarkReadAsync(int conversationId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var conversation = await db.Conversations.FirstOrDefaultAsync(c => c.Id == conversationId);
+        if (conversation is { UnreadCount: > 0 })
+        {
+            conversation.UnreadCount = 0;
+            await db.SaveChangesAsync();
+            events.NotifyChanged();
+        }
+    }
+
+    // Nhập tin nhắn lịch sử lấy từ API đồng bộ: chống trùng theo mã tin gốc,
+    // không tăng số chưa đọc (tin cũ coi như đã xem), cập nhật tên khách thật nếu có
+    public async Task<(int Conversations, int Messages)> ImportHistoryAsync(
+        ChannelType channel, IReadOnlyList<HistoryMessage> history)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var newMessages = 0;
+        var touchedConversations = 0;
+
+        foreach (var group in history.GroupBy(h => h.ExternalConversationId))
+        {
+            var conversation = await db.Conversations
+                .FirstOrDefaultAsync(c => c.Channel == channel && c.ExternalId == group.Key);
+            if (conversation is null)
+            {
+                conversation = new Conversation { Channel = channel, ExternalId = group.Key };
+                db.Conversations.Add(conversation);
+            }
+
+            var realName = group.Select(h => h.CustomerName)
+                .FirstOrDefault(n => !string.IsNullOrEmpty(n) && !n.Contains('…'));
+            if (realName is not null)
+                conversation.CustomerName = realName;
+            else if (string.IsNullOrEmpty(conversation.CustomerName))
+                conversation.CustomerName = $"{channel} …{group.Key[Math.Max(0, group.Key.Length - 4)..]}";
+
+            // Nạp toàn bộ tin đã có của hội thoại để chống trùng (theo mã tin, hoặc theo nội dung+thời gian
+            // cho tin cũ lưu không kèm mã — VD tin shop tự gửi qua app trước đây)
+            var existing = conversation.Id == 0
+                ? new List<Message>()
+                : await db.Messages.Where(m => m.ConversationId == conversation.Id).ToListAsync();
+            var existingIds = existing.Where(m => m.ExternalMessageId is not null)
+                .Select(m => m.ExternalMessageId!).ToHashSet();
+
+            foreach (var item in group.OrderBy(h => h.SentAt))
+            {
+                // Đã có theo mã tin gốc → bỏ qua
+                if (item.ExternalMessageId is not null && existingIds.Contains(item.ExternalMessageId))
+                    continue;
+
+                // Chỉ đối chiếu với tin cũ CHƯA có mã (tin shop gửi qua app trước đây) — đó là trường hợp
+                // duy nhất mã tin không giúp chống trùng. Khớp theo nội dung + chiều + thời gian ±2 phút,
+                // rồi ghi bù mã tin vào bản cũ để lần sau khớp ngay. (Không đối chiếu tin đã có mã để
+                // tránh gộp nhầm 2 tin giống hệt nhau khách gửi liền nhau — chúng có mã khác nhau.)
+                var dup = existing.FirstOrDefault(m =>
+                    m.ExternalMessageId is null &&
+                    m.Direction == item.Direction &&
+                    m.Text == item.Text &&
+                    m.AttachmentUrl is null &&
+                    Math.Abs((m.SentAt - item.SentAt).TotalSeconds) <= 120);
+                if (dup is not null)
+                {
+                    if (item.ExternalMessageId is not null)
+                    {
+                        dup.ExternalMessageId = item.ExternalMessageId;
+                        existingIds.Add(item.ExternalMessageId);
+                    }
+                    continue;
+                }
+
+                var added = new Message
+                {
+                    ConversationId = conversation.Id,
+                    Direction = item.Direction,
+                    Status = MessageStatus.Sent,
+                    Text = item.Text,
+                    ExternalMessageId = item.ExternalMessageId,
+                    SentAt = item.SentAt
+                };
+                conversation.Messages.Add(added);
+                existing.Add(added);
+                if (item.ExternalMessageId is not null)
+                    existingIds.Add(item.ExternalMessageId);
+                newMessages++;
+
+                if (item.SentAt >= conversation.LastMessageAt)
+                {
+                    conversation.LastMessageAt = item.SentAt;
+                    conversation.LastMessagePreview = Truncate(item.Text, 80);
+                }
+            }
+            touchedConversations++;
+        }
+
+        await db.SaveChangesAsync();
+        events.NotifyChanged();
+        return (touchedConversations, newMessages);
+    }
+
+    public async Task AssignAsync(int conversationId, int? staffId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var conversation = await db.Conversations.FirstOrDefaultAsync(c => c.Id == conversationId);
+        if (conversation is not null && conversation.AssignedStaffId != staffId)
+        {
+            conversation.AssignedStaffId = staffId;
+            await db.SaveChangesAsync();
+            events.NotifyChanged();
+        }
+    }
+
+    public async Task SetTagAsync(int conversationId, string tag)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var conversation = await db.Conversations.FirstOrDefaultAsync(c => c.Id == conversationId);
+        if (conversation is not null && conversation.Tag != tag)
+        {
+            conversation.Tag = tag;
+            await db.SaveChangesAsync();
+            events.NotifyChanged();
+        }
+    }
+
+    public bool IsChannelConfigured(ChannelType channel) =>
+        adapters.First(a => a.Channel == channel).IsConfigured;
+
+    private static string Truncate(string value, int max) =>
+        value.Length <= max ? value : value[..max] + "…";
+}
