@@ -4,18 +4,18 @@ using ChumChat.Web.Services;
 
 namespace ChumChat.Web.Channels;
 
-// Zalo tài khoản cá nhân, qua sidecar Node.js dùng thư viện zca-js (sidecars/zalo-personal).
-// Sidecar đăng nhập bằng QR, nghe tin nhắn đến rồi POST vào /webhooks/zalopersonal;
+// Facebook Messenger tài khoản cá nhân, qua sidecar Node.js.
+// Sidecar sử dụng AppState để đăng nhập, nghe tin nhắn đến rồi POST vào /webhooks/messengerpersonal;
 // chiều gửi đi thì adapter này gọi HTTP sang sidecar.
-// LƯU Ý: đây là API không chính thức — Zalo có thể khóa tài khoản nếu phát hiện.
-public class ZaloPersonalAdapter(
+// LƯU Ý: đây là API không chính thức — Facebook có thể khóa tài khoản nếu phát hiện.
+public class MessengerPersonalAdapter(
     ChannelSettingsStore settings,
     IHttpClientFactory httpClientFactory,
-    ILogger<ZaloPersonalAdapter> logger) : IChannelAdapter
+    ILogger<MessengerPersonalAdapter> logger) : IChannelAdapter
 {
-    private ZaloPersonalOptions Opts => settings.ZaloPersonal;
+    private MessengerPersonalOptions Opts => settings.MessengerPersonal;
 
-    public ChannelType Channel => ChannelType.ZaloPersonal;
+    public ChannelType Channel => ChannelType.MessengerPersonal;
 
     public bool IsConfigured =>
         !string.IsNullOrEmpty(Opts.SidecarUrl) && !string.IsNullOrEmpty(Opts.ApiKey);
@@ -38,7 +38,7 @@ public class ZaloPersonalAdapter(
         var userId = root.TryGetProperty("userId", out var u) ? u.GetString() : null;
         if (string.IsNullOrEmpty(userId))
         {
-            logger.LogDebug("ZaloPersonal: payload không có userId, bỏ qua");
+            logger.LogDebug("MessengerPersonal: payload không có userId, bỏ qua");
             return [];
         }
 
@@ -49,7 +49,7 @@ public class ZaloPersonalAdapter(
 
         var name = root.TryGetProperty("name", out var n) && !string.IsNullOrEmpty(n.GetString())
             ? n.GetString()!
-            : $"Zalo CN …{userId[Math.Max(0, userId.Length - 4)..]}";
+            : $"FB CN …{userId[Math.Max(0, userId.Length - 4)..]}";
 
         var sentAt = DateTime.UtcNow;
         if (root.TryGetProperty("ts", out var ts) && ts.TryGetInt64(out var unixMs))
@@ -78,7 +78,7 @@ public class ZaloPersonalAdapter(
         var client = httpClientFactory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Post, Opts.SidecarUrl.TrimEnd('/') + path)
         {
-            Content = ZaloAdapter.JsonContent(payload)
+            Content = ZaloAdapter.JsonContent(payload) // Using existing json helper from ZaloAdapter
         };
         request.Headers.Add("X-Api-Key", Opts.ApiKey);
 
@@ -90,24 +90,22 @@ public class ZaloPersonalAdapter(
         catch (HttpRequestException ex)
         {
             throw new InvalidOperationException(
-                $"Không gọi được sidecar Zalo cá nhân tại {Opts.SidecarUrl} — sidecar đã chạy chưa? ({ex.Message})");
+                $"Không gọi được sidecar Messenger cá nhân tại {Opts.SidecarUrl} — sidecar đã chạy chưa? ({ex.Message})");
         }
 
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Sidecar Zalo cá nhân lỗi {(int)response.StatusCode}: {body}");
-        return null; // sidecar chưa trả message_id
+            throw new InvalidOperationException($"Sidecar Messenger cá nhân lỗi {(int)response.StatusCode}: {body}");
+        return null;
     }
 
     public Task<IReadOnlyList<HistoryMessage>> FetchHistoryAsync(int maxConversations, CancellationToken ct = default) =>
-        throw new NotSupportedException("Zalo cá nhân chưa hỗ trợ đồng bộ tin cũ — chỉ nhận tin mới qua sidecar");
+        throw new NotSupportedException("Messenger cá nhân chưa hỗ trợ đồng bộ tin cũ — chỉ nhận tin mới qua sidecar");
 
-    // Sidecar đã gửi kèm tên hiển thị trong payload; chưa lấy avatar riêng
     public Task<CustomerProfile?> FetchProfileAsync(string externalId, CancellationToken ct = default) =>
         Task.FromResult<CustomerProfile?>(null);
 
-    // Zalo cá nhân dùng nút "Kiểm tra & hiện mã QR" riêng; ở đây chỉ báo trạng thái cấu hình
     public Task<ConnectionTestResult> TestConnectionAsync(CancellationToken ct = default) =>
         Task.FromResult(new ConnectionTestResult(IsConfigured,
-            IsConfigured ? "Đã cấu hình sidecar — dùng nút 'Kiểm tra & hiện mã QR'." : "Chưa cấu hình sidecar."));
+            IsConfigured ? "Đã cấu hình sidecar." : "Chưa cấu hình sidecar."));
 }

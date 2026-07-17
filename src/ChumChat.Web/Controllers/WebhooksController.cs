@@ -27,11 +27,25 @@ public class WebhooksController(
         return Forbid();
     }
 
+    [HttpGet("instagram")]
+    public IActionResult VerifyInstagram(
+        [FromQuery(Name = "hub.mode")] string? mode,
+        [FromQuery(Name = "hub.verify_token")] string? verifyToken,
+        [FromQuery(Name = "hub.challenge")] string? challenge)
+    {
+        if (mode == "subscribe" && verifyToken == settings.Instagram.VerifyToken)
+            return Content(challenge ?? "");
+        return Forbid();
+    }
+
     [HttpPost("zalo")]
     public Task<IActionResult> Zalo() => HandleAsync(ChannelType.Zalo);
 
     [HttpPost("messenger")]
     public Task<IActionResult> Messenger() => HandleAsync(ChannelType.Messenger);
+
+    [HttpPost("instagram")]
+    public Task<IActionResult> Instagram() => HandleAsync(ChannelType.Instagram);
 
     [HttpPost("shopee")]
     public Task<IActionResult> Shopee() => HandleAsync(ChannelType.Shopee);
@@ -43,9 +57,32 @@ public class WebhooksController(
     [HttpPost("zalopersonal")]
     public Task<IActionResult> ZaloPersonal() => HandleAsync(ChannelType.ZaloPersonal);
 
+    [HttpPost("messengerpersonal")]
+    public Task<IActionResult> MessengerPersonal() => HandleAsync(ChannelType.MessengerPersonal);
+
+    // Threads gọi GET này một lần khi đăng ký webhook để xác minh
+    [HttpGet("threads")]
+    public IActionResult VerifyThreads(
+        [FromQuery(Name = "hub.mode")] string? mode,
+        [FromQuery(Name = "hub.verify_token")] string? verifyToken,
+        [FromQuery(Name = "hub.challenge")] string? challenge)
+    {
+        if (mode == "subscribe" && verifyToken == settings.Threads.VerifyToken)
+            return Content(challenge ?? "");
+        return Forbid();
+    }
+
+    [HttpPost("threads")]
+    public Task<IActionResult> Threads() => HandleAsync(ChannelType.Threads);
+
     private async Task<IActionResult> HandleAsync(ChannelType channel)
     {
         var adapter = adapters.First(a => a.Channel == channel);
+        if (!adapter.IsConfigured)
+        {
+            logger.LogWarning("{Channel}: Nhận tin từ webhook nhưng adapter chưa được cấu hình. Bỏ qua.", channel);
+            return Ok();
+        }
 
         using var reader = new StreamReader(Request.Body);
         var rawBody = await reader.ReadToEndAsync();
@@ -62,7 +99,14 @@ public class WebhooksController(
                     .Where(h => h.Key.StartsWith("X-") || h.Key == "Authorization")
                     .Select(h => $"{h.Key}={h.Value}")),
                 rawBody);
-            webhookLog.Add(channel, WebhookLogService.StatusSignatureFail, rawBody);
+
+            var errorDetail = rawBody;
+            if (adapter is ZaloAdapter zaloAdapter && !string.IsNullOrEmpty(zaloAdapter.LastVerificationError))
+            {
+                errorDetail = $"{zaloAdapter.LastVerificationError} | Body: {rawBody}";
+            }
+
+            webhookLog.Add(channel, WebhookLogService.StatusSignatureFail, errorDetail);
             return Ok();
         }
 

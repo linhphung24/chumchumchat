@@ -13,6 +13,7 @@ public class ZaloAdapter(
     ILogger<ZaloAdapter> logger) : IChannelAdapter
 {
     private ZaloOptions Opts => settings.Zalo;
+    public string? LastVerificationError { get; set; }
 
     public ChannelType Channel => ChannelType.Zalo;
 
@@ -43,9 +44,22 @@ public class ZaloAdapter(
 
         var data = Opts.AppId + rawBody + timestamp + Opts.OaSecretKey;
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(data))).ToLowerInvariant();
-        // Chấp nhận cả dạng "mac=<hex>" lẫn "<hex>" trần (tùy phiên bản Zalo gửi)
-        return signature.Equals("mac=" + hash, StringComparison.OrdinalIgnoreCase)
+        
+        var isValid = signature.Equals("mac=" + hash, StringComparison.OrdinalIgnoreCase)
             || signature.Equals(hash, StringComparison.OrdinalIgnoreCase);
+
+        if (!isValid)
+        {
+            LastVerificationError = $"Expected: {hash}, Actual: {signature}, HashedData: {data}";
+            logger.LogWarning("Zalo signature verification failed!\nExpected hash: {ExpectedHash}\nActual signature: {ActualSignature}\nData string: '{Data}'", 
+                hash, signature, data);
+        }
+        else
+        {
+            LastVerificationError = null;
+        }
+
+        return isValid;
     }
 
     public IReadOnlyList<InboundMessage> ParseWebhook(string rawBody)

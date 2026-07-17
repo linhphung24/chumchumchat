@@ -10,13 +10,18 @@ public class ChannelsOptions
     public MessengerOptions Messenger { get; set; } = new();
     public ShopeeOptions Shopee { get; set; } = new();
     public TikTokShopOptions TikTokShop { get; set; } = new();
+    public InstagramOptions Instagram { get; set; } = new();
+    public ThreadsOptions Threads { get; set; } = new();
+    public GoogleLocationOptions GoogleLocation { get; set; } = new();
+    public MessengerPersonalOptions MessengerPersonal { get; set; } = new();
 }
 
 // App tạo tại https://developers.zalo.me (liên kết với Official Account)
 public class ZaloOptions
 {
     public string AppId { get; set; } = "";
-    public string OaSecretKey { get; set; } = "";
+    public string AppSecretKey { get; set; } = ""; // Dùng cho OAuth
+    public string OaSecretKey { get; set; } = ""; // Dùng xác minh chữ ký Webhook
 
     // Do OAuth tự điền sau khi bấm "Kết nối"
     public string AccessToken { get; set; } = "";
@@ -68,6 +73,22 @@ public class ZaloPersonalOptions
     public string AccountName { get; set; } = "";
 }
 
+// Facebook Messenger cá nhân qua sidecar fca-unofficial.
+// KHÔNG phải API chính thức — Facebook có thể khóa tài khoản.
+public class MessengerPersonalOptions
+{
+    // Địa chỉ sidecar Node.js
+    public string SidecarUrl { get; set; } = "http://localhost:3312";
+
+    // Chuỗi bí mật tự đặt
+    public string ApiKey { get; set; } = "";
+
+    // AppState/Cookie của Facebook
+    public string AppState { get; set; } = "";
+
+    public string AccountName { get; set; } = "";
+}
+
 // Gợi ý trả lời bằng AI. Hỗ trợ nhiều nhà cung cấp: Claude/Anthropic, OpenAI (ChatGPT), Google Gemini, DeepSeek.
 public class AiOptions
 {
@@ -105,5 +126,43 @@ public class TikTokShopOptions
     public string AccessToken { get; set; } = "";
     public string RefreshToken { get; set; } = "";
     public DateTime? TokenExpiresAt { get; set; }
+    public string AccountName { get; set; } = "";
+}
+
+// App tạo tại https://developers.facebook.com (Dùng cho Instagram)
+public class InstagramOptions
+{
+    public string AppId { get; set; } = "";
+    public string AppSecret { get; set; } = "";
+
+    public string VerifyToken { get; set; } = "chumchat-verify-token";
+
+    public string PageAccessToken { get; set; } = "";
+    public string PageId { get; set; } = ""; // Facebook Page ID (kết nối với IG)
+    public string InstagramAccountId { get; set; } = ""; // ID của tài khoản IG
+    public string AccountName { get; set; } = "";
+}
+
+// App tạo tại https://developers.facebook.com (Dùng cho Threads)
+public class ThreadsOptions
+{
+    public string AppId { get; set; } = "";
+    public string AppSecret { get; set; } = "";
+    public string VerifyToken { get; set; } = "chumchat-verify-token";
+    public string PageAccessToken { get; set; } = ""; // Threads User/Page Access Token
+    public string ThreadsAccountId { get; set; } = "";
+    public string AccountName { get; set; } = "";
+}
+
+public class GoogleLocationOptions
+{
+    public string ApiKey { get; set; } = "";
+    public string ClientId { get; set; } = "";
+    public string ClientSecret { get; set; } = "";
+    public string AccessToken { get; set; } = "";
+    public string RefreshToken { get; set; } = "";
+    public DateTime? TokenExpiresAt { get; set; }
+    public string AccountId { get; set; } = ""; // Google Business Profile Account ID
+    public string LocationId { get; set; } = ""; // Google Maps Location ID
     public string AccountName { get; set; } = "";
 }

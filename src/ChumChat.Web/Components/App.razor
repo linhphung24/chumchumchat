@@ -10,6 +10,17 @@
     <ResourcePreloader />
     <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="stylesheet" href="@Assets["ChumChat.Web.styles.css"]" />
+    
+    <!-- PWA Manifest & Meta Tags -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#ff5722" />
+    
+    <!-- iOS Support -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="ChumChat" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+
     <ImportMap />
     <HeadOutlet />
 </head>
@@ -24,6 +35,74 @@
             if (el) {
                 el.scrollTop = el.scrollHeight;
             }
+        };
+
+        // Register Service Worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/service-worker.js')
+                .then(function(reg) { console.log('ServiceWorker registered'); })
+                .catch(function(err) { console.error('ServiceWorker registration failed', err); });
+        }
+
+        // Web Push Helper functions
+        window.requestNotificationPermission = async function() {
+            return await Notification.requestPermission();
+        };
+
+        window.getPushSubscriptionStatus = async function() {
+            if (!('serviceWorker' in navigator)) return 'NoServiceWorker';
+            try {
+                const reg = await navigator.serviceWorker.ready;
+                const sub = await reg.pushManager.getSubscription();
+                return sub ? 'Subscribed' : 'NotSubscribed';
+            } catch (err) {
+                console.error('Error checking subscription', err);
+                return 'NotSubscribed';
+            }
+        };
+
+        window.subscribeUserToPush = async function(vapidPublicKey) {
+            if (!('serviceWorker' in navigator)) throw new Error('Service Worker not supported');
+            
+            const reg = await navigator.serviceWorker.ready;
+            
+            // Helper convert base64 VAPID to Uint8Array
+            function urlBase64ToUint8Array(base64String) {
+                const padding = '='.repeat((4 - base64String.length % 4) % 4);
+                const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+                const rawData = window.atob(base64);
+                const outputArray = new Uint8Array(rawData.length);
+                for (let i = 0; i < rawData.length; ++i) {
+                    outputArray[i] = rawData.charCodeAt(i);
+                }
+                return outputArray;
+            }
+
+            const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey);
+            const subscription = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: applicationServerKey
+            });
+
+            // toJSON() trả về keys đã mã hóa base64url đúng chuẩn WebPush
+            const subJson = subscription.toJSON();
+            return JSON.stringify({
+                endpoint: subJson.endpoint,
+                p256dh: subJson.keys.p256dh,
+                auth: subJson.keys.auth
+            });
+        };
+
+        window.unsubscribeUserFromPush = async function() {
+            if (!('serviceWorker' in navigator)) return null;
+            const reg = await navigator.serviceWorker.ready;
+            const sub = await reg.pushManager.getSubscription();
+            if (sub) {
+                const endpoint = sub.endpoint;
+                await sub.unsubscribe();
+                return endpoint;
+            }
+            return null;
         };
     </script>
 </body>

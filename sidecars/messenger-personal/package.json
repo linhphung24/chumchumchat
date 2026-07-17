@@ -1,0 +1,15 @@
+{
+  "name": "chumchat-messenger-personal",
+  "version": "1.0.0",
+  "description": "Sidecar for Facebook Messenger Personal accounts",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "fca-unofficial": "^1.3.13",
+    "sharp": "^0.33.3"
+  }
+}

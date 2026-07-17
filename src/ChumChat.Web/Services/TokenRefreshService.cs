@@ -62,7 +62,7 @@ public class TokenRefreshService(
                 ["grant_type"] = "refresh_token"
             })
         };
-        request.Headers.Add("secret_key", o.OaSecretKey);
+        request.Headers.Add("secret_key", o.AppSecretKey);
 
         var body = await (await client.SendAsync(request)).Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(body);

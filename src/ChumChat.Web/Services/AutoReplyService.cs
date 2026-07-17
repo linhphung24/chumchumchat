@@ -73,7 +73,7 @@ public class AutoReplyService(
         if (string.IsNullOrWhiteSpace(customerText))
             return;
 
-        var rules = (await GetAllAsync()).Where(r => r.Enabled && !string.IsNullOrEmpty(r.FileUrl)).ToList();
+        var rules = (await GetAllAsync()).Where(r => r.Enabled && (!string.IsNullOrEmpty(r.FileUrl) || !string.IsNullOrEmpty(r.ReplyText))).ToList();
         if (rules.Count == 0)
             return;
 
@@ -86,13 +86,25 @@ public class AutoReplyService(
         if (conversation is null)
             return;
 
-        // Chống spam: đã gửi file này cho khách gần đây thì thôi
+        // Chống spam: đã gửi phản hồi này cho khách gần đây thì thôi
         var since = DateTime.UtcNow - Cooldown;
-        var recentlySent = await db.Messages.AnyAsync(m =>
-            m.ConversationId == conversationId &&
-            m.Direction == MessageDirection.Outbound &&
-            m.AttachmentUrl == matched.FileUrl &&
-            m.SentAt >= since);
+        bool recentlySent;
+        if (!string.IsNullOrEmpty(matched.FileUrl))
+        {
+            recentlySent = await db.Messages.AnyAsync(m =>
+                m.ConversationId == conversationId &&
+                m.Direction == MessageDirection.Outbound &&
+                m.AttachmentUrl == matched.FileUrl &&
+                m.SentAt >= since);
+        }
+        else
+        {
+            recentlySent = await db.Messages.AnyAsync(m =>
+                m.ConversationId == conversationId &&
+                m.Direction == MessageDirection.Outbound &&
+                m.Text == matched.ReplyText &&
+                m.SentAt >= since);
+        }
         if (recentlySent)
             return;
 
@@ -109,19 +121,22 @@ public class AutoReplyService(
                 await SaveOutboundAsync(db, conversationId, matched.ReplyText, null, textId);
             }
 
-            // Gửi file: ảnh thì gửi dạng ảnh, còn lại gửi dạng file
-            var relative = matched.FileUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
-            var path = Path.Combine(env.WebRootPath, relative);
-            var bytes = await File.ReadAllBytesAsync(path);
-            var publicUrl = baseUrl.TrimEnd('/') + matched.FileUrl;
+            // Gửi file nếu có
+            if (!string.IsNullOrEmpty(matched.FileUrl))
+            {
+                var relative = matched.FileUrl.TrimStart('/').Replace('/', Path.DirectorySeparatorChar);
+                var path = Path.Combine(env.WebRootPath, relative);
+                var bytes = await File.ReadAllBytesAsync(path);
+                var publicUrl = baseUrl.TrimEnd('/') + matched.FileUrl;
 
-            string? fileMsgId;
-            if (matched.FileMime.StartsWith("image/"))
-                fileMsgId = await adapter.SendImageAsync(conversation, publicUrl, bytes, matched.FileName);
-            else
-                fileMsgId = await adapter.SendFileAsync(conversation, publicUrl, bytes, matched.FileName, matched.FileMime);
+                string? fileMsgId;
+                if (matched.FileMime.StartsWith("image/"))
+                    fileMsgId = await adapter.SendImageAsync(conversation, publicUrl, bytes, matched.FileName);
+                else
+                    fileMsgId = await adapter.SendFileAsync(conversation, publicUrl, bytes, matched.FileName, matched.FileMime);
 
-            await SaveOutboundAsync(db, conversationId, $"📎 {matched.FileName}", matched.FileUrl, fileMsgId);
+                await SaveOutboundAsync(db, conversationId, $"📎 {matched.FileName}", matched.FileUrl, fileMsgId);
+            }
 
             logger.LogInformation("Auto-reply: đã gửi '{Rule}' cho hội thoại {Conv}", matched.Name, conversationId);
             events.NotifyChanged();

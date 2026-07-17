@@ -763,6 +763,9 @@ h1:focus {
 .ch-messenger { background: #a334fa; }
 .ch-shopee { background: #ee4d2d; }
 .ch-tiktok { background: #161823; }
+.ch-instagram { background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%); }
+.ch-threads { background: #000000; }
+.ch-googlelocation { background: #4285F4; }
 
 /* ===== Khung chat ===== */
 .chat-pane {
@@ -2063,4 +2066,192 @@ h1:focus {
 #blazor-error-ui .dismiss {
     cursor: pointer;
     float: right;
+}
+
+/* ===== Hide mobile buttons by default on desktop ===== */
+.mobile-back-btn, .mobile-info-btn, .mobile-close-drawer-btn {
+    display: none;
+}
+
+/* ===== Mobile Responsive Styles ===== */
+@media (max-width: 768px) {
+    .inbox {
+        flex-direction: row; /* Keep horizontal to allow sliding drawer */
+        position: relative;
+        overflow: hidden;
+        width: 100vw;
+        height: 100vh;
+    }
+
+    /* Column 1: Conversation List */
+    .conversation-list {
+        width: 100%;
+        min-width: 100%;
+        border-right: none;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    /* Hide conversation list when chatting */
+    .inbox.has-selection .conversation-list {
+        display: none;
+    }
+
+    /* Column 2: Chat Pane */
+    .chat-pane {
+        display: none;
+        width: 100%;
+        min-width: 100%;
+    }
+    
+    .inbox.has-selection .chat-pane {
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* Chat Header Adjustment */
+    .chat-header {
+        padding: 8px 12px;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .chat-header .chat-name {
+        flex: 1;
+        font-size: 1.02rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Hide unnecessary items in chat header on mobile */
+    .chat-header .tag-select,
+    .chat-header .assign-select,
+    .chat-header .trello-btn,
+    .chat-header .not-configured {
+        display: none !important;
+    }
+
+    /* Mobile Navigation Buttons */
+    .mobile-back-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: none;
+        font-size: 1.25rem;
+        padding: 6px 10px;
+        cursor: pointer;
+        color: #1c1e21;
+    }
+
+    .mobile-info-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f0f2f5;
+        border: 1px solid #d0d2d7;
+        border-radius: 50%;
+        width: 36px;
+        height: 36px;
+        font-size: 1.1rem;
+        cursor: pointer;
+        color: #1c1e21;
+        transition: background 0.15s;
+    }
+
+    .mobile-info-btn:hover {
+        background: #e4e6eb;
+    }
+
+    /* Column 3: Customer Panel (Drawer) */
+    .customer-panel {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        max-width: 100%;
+        z-index: 200;
+        border-left: none;
+        box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
+        transform: translateX(100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .inbox.show-info-drawer .customer-panel {
+        transform: translateX(0);
+    }
+
+    .mobile-close-drawer-btn {
+        display: block;
+        width: 100%;
+        padding: 12px;
+        background: #fdecea;
+        color: #b3261e;
+        border: none;
+        font-weight: 700;
+        font-size: 0.9rem;
+        cursor: pointer;
+        text-align: center;
+        border-bottom: 1px solid #e4e6eb;
+    }
+
+    /* UI components on mobile */
+    .composer textarea {
+        font-size: 16px; /* Avoid automatic zoom on iOS */
+    }
+
+    /* Quick replies scrollable horizontal bar on mobile */
+    .quick-bar {
+        overflow-x: auto;
+        white-space: nowrap;
+        padding: 6px 12px;
+        display: flex;
+        gap: 6px;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .quick-chip, .ai-chip {
+        display: inline-block;
+        flex-shrink: 0;
+    }
+}
+
+/* ===== Web Push UI Elements ===== */
+.push-toggle-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 0 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: inherit;
+    transition: transform 0.2s, opacity 0.2s;
+}
+
+.push-toggle-btn:hover {
+    transform: scale(1.15);
+}
+
+.push-toggle-btn:active {
+    opacity: 0.7;
+}
+
+.push-error-bar {
+    font-size: 0.72rem;
+    color: #b3261e;
+    background: #fdecea;
+    border-radius: 4px;
+    padding: 4px 8px;
+    margin: 4px 10px;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }

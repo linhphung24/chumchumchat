@@ -13,12 +13,14 @@
 @inject StaffService StaffSvc
 @inject QuickReplyService QuickReplies
 @inject WebhookLogService WebhookLog
+@inject SidecarManagerService SidecarManager
+@inject AhaMoveService AhaMoveSvc
 
-<PageTitle>Cấu hình kênh — ChumChat</PageTitle>
+<PageTitle>Cấu hình hệ thống — ChumChat</PageTitle>
 
-<div class="settings">
+<div class="settings dashboard-mode">
     <div class="settings-header">
-        <h1>⚙ Cấu hình kênh</h1>
+        <h1>⚙ Cấu hình hệ thống</h1>
         <a href="/">← Về Hộp thư</a>
     </div>
 
@@ -27,403 +29,744 @@
         <div class="banner @(bannerIsError ? "banner-error" : "banner-ok")">@banner</div>
     }
 
-    <p class="settings-hint">
-        Với mỗi kênh: ① tạo app trên trang developer của nền tảng, ② dán khóa app vào đây và bấm <b>Lưu</b>,
-        ③ bấm <b>Kết nối</b> để mở trang cấp quyền — đăng nhập và đồng ý là xong, token sẽ tự lưu và tự gia hạn.
-    </p>
+    <div class="settings-tabs">
+        <button class="tab-btn @(activeTab == "channels" ? "active" : "")" @onclick="@(() => activeTab = "channels")">Kênh kết nối</button>
+        <button class="tab-btn @(activeTab == "automation" ? "active" : "")" @onclick="@(() => activeTab = "automation")">Tự động hóa</button>
+        <button class="tab-btn @(activeTab == "staff" ? "active" : "")" @onclick="@(() => activeTab = "staff")">Nhân viên & Phản hồi</button>
+        <button class="tab-btn @(activeTab == "webhook" ? "active" : "")" @onclick="@(() => activeTab = "webhook")">Nhật ký Webhook</button>
+    </div>
 
-    @* ===== NHẬT KÝ WEBHOOK (CHẨN ĐOÁN) ===== *@
-    <section class="channel-card">
-        <header>
-            <span class="channel-dot" style="background:#475569"></span>
-            <h2>📡 Nhật ký webhook</h2>
-            <span class="status-badge @(webhookEntries.Count > 0 ? "connected" : "disconnected")">@webhookEntries.Count sự kiện</span>
-        </header>
-        <p class="settings-hint">
-            Mỗi lần nền tảng (Zalo/Facebook...) gửi tin tới server, một dòng hiện ở đây.
-            <b>Cách kiểm tra:</b> nhắn thử một tin vào OA/Fanpage rồi bấm <b>Làm mới</b> —
-            <b>không thấy dòng mới</b> = nền tảng chưa gọi tới webhook (kiểm tra khai báo Webhook URL trên trang developer);
-            thấy dòng <b>"Sai chữ ký"</b> = App ID/Secret Key không khớp. (Nhật ký lưu trong RAM, xóa khi restart app.)
-        </p>
-        <div class="actions">
-            <button class="btn-sync" @onclick="RefreshWebhookLog">🔄 Làm mới</button>
-        </div>
-        @if (webhookEntries.Count == 0)
+    <div class="tab-content">
+        @* ================= TAB: KÊNH KẾT NỐI ================= *@
+        @if (activeTab == "channels")
         {
-            <p class="panel-empty" style="margin-top:10px">Chưa có sự kiện webhook nào kể từ khi app khởi động.</p>
-        }
-        else
-        {
-            <div class="webhook-log">
-                @foreach (var e in webhookEntries.Take(30))
+            <div class="dashboard-toolbar">
+                <div class="search-box">
+                    <input type="text" placeholder="Tìm kiếm trang..." />
+                </div>
+                <button class="btn-add-connection" @onclick="OpenAddModal">＋ Thêm kết nối</button>
+            </div>
+
+            <div class="connected-grid">
+                @if (string.IsNullOrEmpty(zalo.AccessToken) && string.IsNullOrEmpty(messenger.PageAccessToken) && string.IsNullOrEmpty(shopee.AccessToken) && string.IsNullOrEmpty(tiktok.AccessToken) && string.IsNullOrEmpty(zaloPersonal.ApiKey) && string.IsNullOrEmpty(instagram.PageAccessToken))
                 {
-                    <div class="webhook-row @WebhookCss(e.Status)">
-                        <span class="wh-time">@e.At.ToLocalTime().ToString("HH:mm:ss dd/MM")</span>
-                        <span class="wh-channel">@Inbox_ChannelLabel(e.Channel)</span>
-                        <span class="wh-status">@WebhookLabel(e.Status)</span>
-                        <span class="wh-detail" title="@e.Detail">@e.Detail</span>
+                    <div class="empty-channels">
+                        <div class="empty-icon">🔌</div>
+                        <p><b>Không có trang nào</b></p>
+                        <p>Bạn chưa có trang nào để kích hoạt. Vui lòng chọn nền tảng và kết nối thêm trang để sử dụng.</p>
                     </div>
+                }
+                else
+                {
+                    @if (!string.IsNullOrEmpty(zalo.AccessToken))
+                    {
+                        <div class="connected-card">
+                            <div class="card-icon ch-zalo">Z</div>
+                            <div class="card-info">
+                                <div class="card-name">@(string.IsNullOrEmpty(zalo.AccountName) ? "Zalo OA" : zalo.AccountName)</div>
+                                <div class="card-meta">App ID: @zalo.AppId</div>
+                            </div>
+                            <div class="card-actions">
+                                <button class="btn-icon" @onclick="@(() => OpenConfigModal("zalo"))" title="Cấu hình">⚙</button>
+                            </div>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(messenger.PageAccessToken))
+                    {
+                        <div class="connected-card">
+                            <div class="card-icon ch-messenger">F</div>
+                            <div class="card-info">
+                                <div class="card-name">@(string.IsNullOrEmpty(messenger.AccountName) ? "Facebook Page" : messenger.AccountName)</div>
+                                <div class="card-meta">Page ID: @messenger.PageId</div>
+                            </div>
+                            <div class="card-actions">
+                                <button class="btn-icon" @onclick="@(() => OpenConfigModal("messenger"))" title="Cấu hình">⚙</button>
+                            </div>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(instagram.PageAccessToken))
+                    {
+                        <div class="connected-card">
+                            <div class="card-icon ch-instagram">IG</div>
+                            <div class="card-info">
+                                <div class="card-name">@(string.IsNullOrEmpty(instagram.AccountName) ? "Instagram" : instagram.AccountName)</div>
+                                <div class="card-meta">IG ID: @instagram.InstagramAccountId</div>
+                            </div>
+                            <div class="card-actions">
+                                <button class="btn-icon" @onclick="@(() => OpenConfigModal("instagram"))" title="Cấu hình">⚙</button>
+                            </div>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(shopee.AccessToken))
+                    {
+                        <div class="connected-card">
+                            <div class="card-icon ch-shopee">S</div>
+                            <div class="card-info">
+                                <div class="card-name">@(string.IsNullOrEmpty(shopee.AccountName) ? "Shopee Shop" : shopee.AccountName)</div>
+                                <div class="card-meta">Shop ID: @shopee.ShopId</div>
+                            </div>
+                            <div class="card-actions">
+                                <button class="btn-icon" @onclick="@(() => OpenConfigModal("shopee"))" title="Cấu hình">⚙</button>
+                            </div>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(tiktok.AccessToken))
+                    {
+                        <div class="connected-card">
+                            <div class="card-icon ch-tiktok">T</div>
+                            <div class="card-info">
+                                <div class="card-name">@(string.IsNullOrEmpty(tiktok.AccountName) ? "TikTok Shop" : tiktok.AccountName)</div>
+                                <div class="card-meta">Cipher: @(tiktok.ShopCipher.Length > 8 ? tiktok.ShopCipher[..8] + "..." : tiktok.ShopCipher)</div>
+                            </div>
+                            <div class="card-actions">
+                                <button class="btn-icon" @onclick="@(() => OpenConfigModal("tiktok"))" title="Cấu hình">⚙</button>
+                            </div>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(zaloPersonal.ApiKey))
+                    {
+                        <div class="connected-card">
+                            <div class="card-icon ch-zalopersonal">Z</div>
+                            <div class="card-info">
+                                <div class="card-name">@(string.IsNullOrEmpty(zaloPersonal.AccountName) ? "Zalo Cá Nhân" : zaloPersonal.AccountName)</div>
+                                <div class="card-meta">Sidecar: @zaloPersonal.SidecarUrl</div>
+                            </div>
+                            <div class="card-actions">
+                                <button class="btn-icon" @onclick="@(() => OpenConfigModal("zalopersonal"))" title="Cấu hình">⚙</button>
+                            </div>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(messengerPersonal.ApiKey))
+                    {
+                        <div class="connected-card">
+                            <div class="card-icon ch-messenger">FBC</div>
+                            <div class="card-info">
+                                <div class="card-name">@(string.IsNullOrEmpty(messengerPersonal.AccountName) ? "Messenger Cá Nhân" : messengerPersonal.AccountName)</div>
+                                <div class="card-meta">Sidecar: @messengerPersonal.SidecarUrl</div>
+                            </div>
+                            <div class="card-actions">
+                                <button class="btn-icon" @onclick="@(() => OpenConfigModal("messengerpersonal"))" title="Cấu hình">⚙</button>
+                            </div>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(threads.PageAccessToken))
+                    {
+                        <div class="connected-card">
+                            <div class="card-icon ch-threads">TH</div>
+                            <div class="card-info">
+                                <div class="card-name">@(string.IsNullOrEmpty(threads.AccountName) ? "Threads" : threads.AccountName)</div>
+                                <div class="card-meta">Threads ID: @threads.ThreadsAccountId</div>
+                            </div>
+                            <div class="card-actions">
+                                <button class="btn-icon" @onclick="@(() => OpenConfigModal("threads"))" title="Cấu hình">⚙</button>
+                            </div>
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(googleLocation.AccessToken))
+                    {
+                        <div class="connected-card">
+                            <div class="card-icon ch-googlelocation">G</div>
+                            <div class="card-info">
+                                <div class="card-name">@(string.IsNullOrEmpty(googleLocation.AccountName) ? "Google Location" : googleLocation.AccountName)</div>
+                                <div class="card-meta">Location ID: @googleLocation.LocationId</div>
+                            </div>
+                            <div class="card-actions">
+                                <button class="btn-icon" @onclick="@(() => OpenConfigModal("googlelocation"))" title="Cấu hình">⚙</button>
+                            </div>
+                        </div>
+                    }
                 }
             </div>
         }
-    </section>
 
-    @* ===== ZALO ===== *@
-    <section class="channel-card">
-        <header>
-            <span class="channel-dot ch-zalo"></span>
-            <h2>Zalo Official Account</h2>
-            @StatusBadge(zalo.AccessToken, zalo.AccountName, zalo.TokenExpiresAt)
-        </header>
-        <details class="guide">
-            <summary>📖 Cách lấy App ID và Secret Key</summary>
-            <ol>
-                <li>Cần có <b>Zalo Official Account đã xác thực</b> (tạo tại <a href="https://oa.zalo.me" target="_blank">oa.zalo.me</a> — cần giấy tờ doanh nghiệp/hộ kinh doanh).</li>
-                <li>Vào <a href="https://developers.zalo.me" target="_blank">developers.zalo.me</a>, đăng nhập bằng Zalo → <b>Thêm ứng dụng mới</b>, điền tên rồi tạo.</li>
-                <li>Trong trang ứng dụng, xem mục thông tin app: copy <b>ID ứng dụng</b> (App ID) và <b>Khóa bí mật</b> (Secret Key) → dán vào 2 ô bên dưới.</li>
-                <li>Vào mục <b>Official Account</b> trong app → <b>Liên kết OA</b> của bạn với ứng dụng.</li>
-                <li>Vào mục <b>Cài đặt</b> → khai báo <b>Callback URL</b> bằng đúng URL hiển thị bên dưới.</li>
-                <li>Vào mục <b>Webhook</b> → nhập <b>Webhook URL</b> bên dưới, đăng ký sự kiện <b>user_send_text</b> (người dùng gửi tin nhắn).</li>
-                <li>Bấm <b>Lưu</b> rồi <b>Kết nối Zalo</b> → đăng nhập tài khoản quản trị OA và đồng ý cấp quyền.</li>
-            </ol>
-        </details>
-        <div class="fields">
-            <label>App ID <input @bind="zalo.AppId" placeholder="Từ developers.zalo.me" /></label>
-            <label>Secret Key <input type="password" @bind="zalo.OaSecretKey" placeholder="Khóa bí mật của app" /></label>
-        </div>
-        <div class="urls">
-            <div>Callback URL (khai báo trong app Zalo): <code>@BaseUrl/oauth/zalo/callback</code></div>
-            <div>Webhook URL (khai báo trong app Zalo): <code>@BaseUrl/webhooks/zalo</code></div>
-        </div>
-        <div class="actions">
-            <button class="btn-save" @onclick="SaveZalo">Lưu</button>
-            <a class="btn-connect" href="/oauth/zalo/start" data-enhance-nav="false">Kết nối Zalo</a>
-            @if (!string.IsNullOrEmpty(zalo.AccessToken))
-            {
-                <button class="btn-sync" @onclick="() => TestConnection(ChannelType.Zalo)" disabled="@testing">🔎 Kiểm tra kết nối</button>
-                <button class="btn-sync" @onclick="() => SyncHistory(ChannelType.Zalo)" disabled="@syncing">
-                    @(syncing ? "Đang đồng bộ…" : "⟳ Đồng bộ tin cũ")
-                </button>
-                <button class="btn-disconnect" @onclick="DisconnectZalo">Ngắt kết nối</button>
-            }
-        </div>
-        @if (testResults.TryGetValue(ChannelType.Zalo, out var zaloTest))
+        @* ================= TAB: TỰ ĐỘNG HÓA & AI ================= *@
+        @if (activeTab == "automation")
         {
-            <p class="test-result @(zaloTest.Ok ? "ok" : "fail")">@(zaloTest.Ok ? "✔ " : "✕ ")@zaloTest.Message</p>
-        }
-    </section>
-
-    @* ===== ZALO CÁ NHÂN ===== *@
-    <section class="channel-card">
-        <header>
-            <span class="channel-dot ch-zalopersonal"></span>
-            <h2>Zalo cá nhân</h2>
-            @if (!string.IsNullOrEmpty(zaloPersonal.ApiKey))
-            {
-                <span class="status-badge connected">Đã cấu hình@(string.IsNullOrEmpty(zaloPersonal.AccountName) ? "" : $": {zaloPersonal.AccountName}")</span>
-            }
-            else
-            {
-                <span class="status-badge disconnected">Chưa cấu hình</span>
-            }
-        </header>
-        <div class="warning-box">
-            ⚠ <b>Rủi ro:</b> Zalo cá nhân <b>không có API chính thức</b> — kênh này chạy qua thư viện
-            cộng đồng mô phỏng Zalo Web (zca-js). Zalo có thể <b>khóa tài khoản</b> nếu phát hiện.
-            Khuyến nghị dùng <b>tài khoản phụ</b> chuyên tiếp khách, không dùng tài khoản chính.
-        </div>
-        <details class="guide">
-            <summary>📖 Cách chạy sidecar Zalo cá nhân</summary>
-            <ol>
-                <li>Cài <b>Node.js 20+</b> trên máy chạy ChumChat (VPS): <code>apt install -y nodejs npm</code></li>
-                <li>Thư mục <code>sidecars/zalo-personal</code> trong mã nguồn: copy lên VPS rồi chạy <code>npm install</code>.</li>
-                <li>Tự đặt một chuỗi bí mật (API Key) → điền vào ô bên dưới và bấm <b>Lưu</b>.</li>
-                <li>Chạy sidecar với biến môi trường:<br />
-                    <code>API_KEY=chuoi-bi-mat CHUMCHAT_URL=http://localhost:5000 node index.js</code><br />
-                    (chạy nền lâu dài thì dùng file <code>deploy/chumchat-zalo-personal.service</code>)</li>
-                <li>Điền địa chỉ sidecar + API Key bên dưới, bấm <b>Lưu</b>, rồi bấm <b>Kiểm tra & hiện mã QR</b> — <b>mã QR hiện ngay tại đây</b>, mở Zalo trên điện thoại quét là đăng nhập. Các lần sau tự đăng nhập lại.</li>
-                <li>Quét xong bấm lại <b>Kiểm tra</b> — báo "đã đăng nhập" là khách nhắn Zalo cá nhân sẽ đổ về Hộp thư.</li>
-            </ol>
-        </details>
-        <div class="fields">
-            <label>Địa chỉ sidecar <input @bind="zaloPersonal.SidecarUrl" placeholder="http://localhost:3311" /></label>
-            <label>API Key <input type="password" @bind="zaloPersonal.ApiKey" placeholder="Chuỗi bí mật tự đặt, trùng với API_KEY của sidecar" /></label>
-        </div>
-        <div class="actions">
-            <button class="btn-save" @onclick="SaveZaloPersonal">Lưu</button>
-            <button class="btn-sync" @onclick="CheckZaloPersonalSidecar" disabled="@syncing">
-                @(syncing ? "Đang kiểm tra…" : "Kiểm tra & hiện mã QR")
-            </button>
-            @if (!string.IsNullOrEmpty(zaloPersonal.ApiKey))
-            {
-                <button class="btn-disconnect" @onclick="DisconnectZaloPersonal">Gỡ cấu hình</button>
-            }
-        </div>
-        @if (zaloQr is not null)
-        {
-            <div class="qr-box">
-                <p><b>Quét mã này bằng Zalo trên điện thoại để đăng nhập:</b></p>
-                <img class="qr-img" src="@zaloQr" alt="Mã QR đăng nhập Zalo" />
-                <p class="settings-hint">Mở Zalo → biểu tượng quét mã (góc trên) → quét mã trên màn hình. Sau khi quét xong bấm lại "Kiểm tra" để xác nhận đã đăng nhập.</p>
-            </div>
-        }
-    </section>
-
-    @* ===== MESSENGER ===== *@
-    <section class="channel-card">
-        <header>
-            <span class="channel-dot ch-messenger"></span>
-            <h2>Facebook Messenger</h2>
-            @StatusBadge(messenger.PageAccessToken, messenger.AccountName, null)
-        </header>
-        <details class="guide">
-            <summary>📖 Cách lấy App ID và App Secret</summary>
-            <ol>
-                <li>Cần có <b>Fanpage</b> và bạn là quản trị viên của page đó.</li>
-                <li>Vào <a href="https://developers.facebook.com" target="_blank">developers.facebook.com</a> → <b>My Apps</b> → <b>Create App</b> → chọn loại <b>Business</b>.</li>
-                <li>Trong app: <b>App Settings → Basic</b> → copy <b>App ID</b> và <b>App Secret</b> (bấm Show) → dán vào 2 ô bên dưới.</li>
-                <li>Bấm <b>Add Product</b> → thêm <b>Facebook Login for Business</b> → vào <b>Settings</b> của nó → ô <b>Valid OAuth Redirect URIs</b>: dán Redirect URI bên dưới.</li>
-                <li>Thêm tiếp sản phẩm <b>Messenger</b> → mục <b>Webhooks</b>: dán Webhook URL bên dưới + nhập <b>Verify Token</b> trùng với ô bên dưới → Verify and Save → subscribe trường <b>messages</b>.</li>
-                <li>Bấm <b>Lưu</b> rồi <b>Kết nối Facebook</b> → đăng nhập, chọn Fanpage muốn nhận tin.</li>
-                <li>Lưu ý: app ở chế độ <b>Development</b> vẫn dùng được ngay với tài khoản admin của app; muốn nhân viên khác (không phải admin app) nhắn thử thì thêm họ vào mục Roles, hoặc submit App Review (quyền <code>pages_messaging</code>) khi dùng chính thức.</li>
-            </ol>
-        </details>
-        <div class="fields">
-            <label>App ID <input @bind="messenger.AppId" placeholder="Từ developers.facebook.com" /></label>
-            <label>App Secret <input type="password" @bind="messenger.AppSecret" placeholder="Khóa bí mật của app" /></label>
-            <label>Verify Token <input @bind="messenger.VerifyToken" placeholder="Chuỗi tự đặt, dùng khi khai báo webhook" /></label>
-        </div>
-        <div class="urls">
-            <div>Redirect URI hợp lệ (khai báo trong Facebook Login): <code>@BaseUrl/oauth/messenger/callback</code></div>
-            <div>Webhook URL + Verify Token (khai báo trong sản phẩm Messenger): <code>@BaseUrl/webhooks/messenger</code></div>
-        </div>
-        <div class="actions">
-            <button class="btn-save" @onclick="SaveMessenger">Lưu</button>
-            <a class="btn-connect" href="/oauth/messenger/start" data-enhance-nav="false">Kết nối Facebook</a>
-            @if (!string.IsNullOrEmpty(messenger.PageAccessToken))
-            {
-                <button class="btn-sync" @onclick="() => TestConnection(ChannelType.Messenger)" disabled="@testing">🔎 Kiểm tra kết nối</button>
-                <button class="btn-sync" @onclick="() => SyncHistory(ChannelType.Messenger)" disabled="@syncing">
-                    @(syncing ? "Đang đồng bộ…" : "⟳ Đồng bộ tin cũ")
-                </button>
-                <button class="btn-disconnect" @onclick="DisconnectMessenger">Ngắt kết nối</button>
-            }
-        </div>
-        @if (testResults.TryGetValue(ChannelType.Messenger, out var fbTest))
-        {
-            <p class="test-result @(fbTest.Ok ? "ok" : "fail")">@(fbTest.Ok ? "✔ " : "✕ ")@fbTest.Message</p>
-        }
-    </section>
-
-    @* ===== SHOPEE ===== *@
-    <section class="channel-card">
-        <header>
-            <span class="channel-dot ch-shopee"></span>
-            <h2>Shopee</h2>
-            @StatusBadge(shopee.AccessToken, shopee.AccountName, shopee.TokenExpiresAt)
-        </header>
-        <details class="guide">
-            <summary>📖 Cách lấy Partner ID và Partner Key</summary>
-            <ol>
-                <li>Vào <a href="https://open.shopee.com" target="_blank">open.shopee.com</a> → <b>Register</b> đăng ký tài khoản developer (Shopee duyệt hồ sơ, có thể mất vài ngày).</li>
-                <li>Sau khi được duyệt: vào <b>Console</b> → <b>Create App</b>, chọn loại app phù hợp (Seller In-House nếu chỉ dùng cho shop của mình).</li>
-                <li>Trong <b>App Information</b>: copy <b>Partner ID</b> và <b>Partner Key</b> (live key, không phải test/sandbox) → dán vào 2 ô bên dưới.</li>
-                <li>Khai báo <b>Redirect domain</b> bằng domain bên dưới (chỉ cần domain, không cần path).</li>
-                <li>Vào mục <b>Push Mechanism</b> → nhập Webhook URL bên dưới → bật sự kiện <b>Webchat</b> (tin nhắn chat).</li>
-                <li>Lưu ý: app mới nằm ở môi trường test — cần <b>submit lên production</b> thì mới kết nối được shop thật.</li>
-                <li>Bấm <b>Lưu</b> rồi <b>Kết nối Shopee</b> → đăng nhập tài khoản shop và xác nhận ủy quyền.</li>
-            </ol>
-        </details>
-        <div class="fields">
-            <label>Partner ID <input @bind="shopee.PartnerId" placeholder="Từ open.shopee.com" /></label>
-            <label>Partner Key <input type="password" @bind="shopee.PartnerKey" placeholder="Khóa bí mật partner" /></label>
-        </div>
-        <div class="urls">
-            <div>Redirect domain (khai báo trong app Shopee): <code>@BaseUrl</code></div>
-            <div>Webhook URL (mục Push Mechanism, bật webchat): <code>@BaseUrl/webhooks/shopee</code></div>
-        </div>
-        <div class="actions">
-            <button class="btn-save" @onclick="SaveShopee">Lưu</button>
-            <a class="btn-connect" href="/oauth/shopee/start" data-enhance-nav="false">Kết nối Shopee</a>
-            @if (!string.IsNullOrEmpty(shopee.AccessToken))
-            {
-                <button class="btn-sync" @onclick="() => SyncHistory(ChannelType.Shopee)" disabled="@syncing">
-                    @(syncing ? "Đang đồng bộ…" : "⟳ Đồng bộ tin cũ")
-                </button>
-                <button class="btn-disconnect" @onclick="DisconnectShopee">Ngắt kết nối</button>
-            }
-        </div>
-    </section>
-
-    @* ===== TIKTOK SHOP ===== *@
-    <section class="channel-card">
-        <header>
-            <span class="channel-dot ch-tiktok"></span>
-            <h2>TikTok Shop</h2>
-            @StatusBadge(tiktok.AccessToken, tiktok.AccountName, tiktok.TokenExpiresAt)
-        </header>
-        <details class="guide">
-            <summary>📖 Cách lấy App Key và App Secret</summary>
-            <ol>
-                <li>Cần có <b>TikTok Shop</b> đang hoạt động (tài khoản seller).</li>
-                <li>Vào <a href="https://partner.tiktokshop.com" target="_blank">partner.tiktokshop.com</a> → đăng ký làm <b>Partner</b>, chọn loại <b>Developer</b> (chọn Self Developer nếu chỉ dùng cho shop của mình).</li>
-                <li>Vào <b>App & Service</b> → <b>Create App</b>, điền thông tin, chọn khu vực có Việt Nam.</li>
-                <li>Trong trang app: copy <b>App Key</b> và <b>App Secret</b> → dán vào 2 ô bên dưới.</li>
-                <li>Khai báo <b>Redirect URL</b> bằng đúng URL bên dưới.</li>
-                <li>Trong phần cấu hình app, chọn quyền (scope) <b>Customer Service / Buyer Messages</b>, và ở mục <b>Webhook</b> nhập Webhook URL bên dưới cho sự kiện tin nhắn mới.</li>
-                <li>Bấm <b>Lưu</b> rồi <b>Kết nối TikTok</b> → đăng nhập tài khoản seller và đồng ý ủy quyền.</li>
-            </ol>
-        </details>
-        <div class="fields">
-            <label>App Key <input @bind="tiktok.AppKey" placeholder="Từ partner.tiktokshop.com" /></label>
-            <label>App Secret <input type="password" @bind="tiktok.AppSecret" placeholder="Khóa bí mật của app" /></label>
-        </div>
-        <div class="urls">
-            <div>Redirect URL (khai báo trong app TikTok): <code>@BaseUrl/oauth/tiktok/callback</code></div>
-            <div>Webhook URL (sự kiện tin nhắn CSKH): <code>@BaseUrl/webhooks/tiktok</code></div>
-        </div>
-        <div class="actions">
-            <button class="btn-save" @onclick="SaveTikTok">Lưu</button>
-            <a class="btn-connect" href="/oauth/tiktok/start" data-enhance-nav="false">Kết nối TikTok</a>
-            @if (!string.IsNullOrEmpty(tiktok.AccessToken))
-            {
-                <button class="btn-sync" @onclick="() => SyncHistory(ChannelType.TikTokShop)" disabled="@syncing">
-                    @(syncing ? "Đang đồng bộ…" : "⟳ Đồng bộ tin cũ")
-                </button>
-                <button class="btn-disconnect" @onclick="DisconnectTikTok">Ngắt kết nối</button>
-            }
-        </div>
-    </section>
-
-    @* ===== TRELLO ===== *@
-    <section class="channel-card">
-        <header>
-            <span class="channel-dot" style="background:#0079bf"></span>
-            <h2>Trello — tạo thẻ khi chốt đơn</h2>
-            @if (!string.IsNullOrEmpty(trello.Token))
-            {
-                <span class="status-badge connected">Đã cấu hình</span>
-            }
-            else
-            {
-                <span class="status-badge disconnected">Chưa cấu hình</span>
-            }
-        </header>
-        <details class="guide">
-            <summary>📖 Cách lấy API Key, Token và List ID</summary>
-            <ol>
-                <li>Vào <a href="https://trello.com/power-ups/admin" target="_blank">trello.com/power-ups/admin</a> → <b>New</b> tạo một Power-Up (điền tên tùy ý, workspace của bạn) → mở tab <b>API key</b> → <b>Generate a new API key</b> → copy <b>API Key</b>.</li>
-                <li>Ngay cạnh API key có link <b>Token</b> (hoặc mở link sau, thay YOUR_KEY):<br />
-                    <code>https://trello.com/1/authorize?expiration=never&scope=read,write&response_type=token&name=ChumChat&key=YOUR_KEY</code><br />
-                    → bấm <b>Allow</b> → copy chuỗi token hiện ra.</li>
-                <li>Lấy <b>List ID</b> (ID của cột sẽ nhận thẻ, VD cột "Đơn mới"): mở board trên trình duyệt, URL dạng <code>trello.com/b/XXXX/ten-board</code> — mở tiếp địa chỉ sau (thay XXXX, KEY, TOKEN):<br />
-                    <code>https://api.trello.com/1/boards/XXXX/lists?key=KEY&token=TOKEN</code><br />
-                    → hiện danh sách các cột kèm <code>"id"</code> — copy id của cột muốn dùng.</li>
-                <li>Dán cả 3 giá trị vào các ô bên dưới → <b>Lưu</b>. Xong: trong Hộp thư, mỗi hội thoại có nút <b>📋 Tạo thẻ Trello</b>.</li>
-            </ol>
-        </details>
-        <div class="fields">
-            <label>API Key <input @bind="trello.ApiKey" placeholder="Từ trello.com/power-ups/admin" /></label>
-            <label>Token <input type="password" @bind="trello.Token" placeholder="Token đã Allow" /></label>
-            <label>List ID <input @bind="trello.ListId" placeholder="ID cột nhận thẻ (VD: Đơn mới)" /></label>
-        </div>
-        <div class="actions">
-            <button class="btn-save" @onclick="SaveTrello">Lưu</button>
-        </div>
-    </section>
-
-    @* ===== TÀI KHOẢN NHÂN VIÊN ===== *@
-    <section class="channel-card">
-        <header>
-            <span class="channel-dot" style="background:#5b21b6"></span>
-            <h2>👥 Tài khoản nhân viên</h2>
-            <span class="status-badge connected">@staffList.Count tài khoản</span>
-        </header>
-        <div class="staff-list">
-            @foreach (var s in staffList)
-            {
-                <div class="staff-row">
-                    <span class="staff-name">@s.DisplayName <span class="staff-username">(@s.Username)</span></span>
-                    @if (s.IsAdmin)
+            <section class="channel-card">
+                <header>
+                    <span class="channel-dot" style="background:#0079bf"></span>
+                    <h2>Trello — tạo thẻ khi chốt đơn</h2>
+                    @if (!string.IsNullOrEmpty(trello.Token))
                     {
-                        <span class="staff-badge admin">Admin</span>
+                        <span class="status-badge connected">Đã cấu hình</span>
                     }
-                    @if (!s.IsActive)
+                    else
                     {
-                        <span class="staff-badge off">Đã khóa</span>
+                        <span class="status-badge disconnected">Chưa cấu hình</span>
                     }
-                    <span class="staff-actions">
-                        @if (s.IsActive)
-                        {
-                            <button @onclick="() => ToggleActive(s.Id, false)">Khóa</button>
-                        }
-                        else
-                        {
-                            <button @onclick="() => ToggleActive(s.Id, true)">Mở lại</button>
-                        }
-                    </span>
+                </header>
+                <details class="guide">
+                    <summary>📖 Cách lấy API Key, Token và List ID</summary>
+                    <ol>
+                        <li>Vào <a href="https://trello.com/power-ups/admin" target="_blank">trello.com/power-ups/admin</a> → <b>New</b> tạo một Power-Up (điền tên tùy ý, workspace của bạn) → mở tab <b>API key</b> → <b>Generate a new API key</b> → copy <b>API Key</b>.</li>
+                        <li>Ngay cạnh API key có link <b>Token</b> (hoặc mở link sau, thay YOUR_KEY):<br />
+                            <code>https://trello.com/1/authorize?expiration=never&scope=read,write&response_type=token&name=ChumChat&key=YOUR_KEY</code><br />
+                            → bấm <b>Allow</b> → copy chuỗi token hiện ra.</li>
+                        <li>Lấy <b>List ID</b> (ID của cột sẽ nhận thẻ, VD cột "Đơn mới"): mở board trên trình duyệt, URL dạng <code>trello.com/b/XXXX/ten-board</code> — mở tiếp địa chỉ sau (thay XXXX, KEY, TOKEN):<br />
+                            <code>https://api.trello.com/1/boards/XXXX/lists?key=KEY&token=TOKEN</code><br />
+                            → hiện danh sách các cột kèm <code>"id"</code> — copy id của cột muốn dùng.</li>
+                        <li>Dán cả 3 giá trị vào các ô bên dưới → <b>Lưu</b>. Xong: trong Hộp thư, mỗi hội thoại có nút <b>📋 Tạo thẻ Trello</b>.</li>
+                    </ol>
+                </details>
+                <div class="fields">
+                    <label>API Key <input @bind="trello.ApiKey" placeholder="Từ trello.com/power-ups/admin" /></label>
+                    <label>Token <input type="password" @bind="trello.Token" placeholder="Token đã Allow" /></label>
+                    <label>List ID <input @bind="trello.ListId" placeholder="ID cột nhận thẻ (VD: Đơn mới)" /></label>
                 </div>
-            }
-        </div>
-        <h4 class="sub-head">＋ Thêm nhân viên</h4>
-        <div class="fields">
-            <label>Tên đăng nhập <input @bind="newStaffUsername" placeholder="vd: nhanvien1" /></label>
-            <label>Tên hiển thị <input @bind="newStaffName" placeholder="vd: Nguyễn Thị B" /></label>
-            <label>Mật khẩu <input type="password" @bind="newStaffPassword" /></label>
-            <label class="checkbox-field"><input type="checkbox" @bind="newStaffAdmin" /> Là quản trị viên</label>
-        </div>
-        @if (staffError is not null)
-        {
-            <p class="modal-error">✕ @staffError</p>
+                <div class="actions">
+                    <button class="btn-save" @onclick="SaveTrello">Lưu cấu hình</button>
+                </div>
+            </section>
+
+            <section class="channel-card">
+                <header>
+                    <span class="channel-dot" style="background:#ea5800"></span>
+                    <h2>Giao hàng AhaMove</h2>
+                    @if (!string.IsNullOrEmpty(ahaMove.Token))
+                    {
+                        <span class="status-badge connected">Đã xác thực</span>
+                    }
+                    else
+                    {
+                        <span class="status-badge disconnected">Chưa cấu hình</span>
+                    }
+                </header>
+                <details class="guide">
+                    <summary>📖 Cấu hình giao hàng AhaMove</summary>
+                    <p>Nhập số điện thoại và API Key đã đăng ký tài khoản Đối tác của AhaMove để lấy Token dùng cho việc gọi xe tự động.</p>
+                </details>
+                <div class="fields">
+                    <label>Số điện thoại <input @bind="ahaMove.Mobile" placeholder="849xxxx" /></label>
+                    <label>API Key <input type="password" @bind="ahaMove.ApiKey" placeholder="API Key của AhaMove" /></label>
+                    <label>Tên Shop <input @bind="ahaMove.SenderName" placeholder="Tên người gửi" /></label>
+                    <label>SĐT Shop <input @bind="ahaMove.SenderMobile" placeholder="SĐT người gửi" /></label>
+                </div>
+                <label class="full-field">Địa chỉ lấy hàng mặc định
+                    <textarea @bind="ahaMove.SenderAddress" rows="2" placeholder="VD: 7/28 Thành Thái, Quận 10... Hoặc dán trực tiếp link Google Maps vào đây (Rất khuyến khích)"></textarea>
+                </label>
+                <div class="actions">
+                    <button class="btn-save" @onclick="SaveAhaMove" disabled="@isAhaMoveLoading">
+                        @(isAhaMoveLoading ? "Đang xử lý..." : "Lưu & Lấy Token")
+                    </button>
+                </div>
+                @if (ahaMoveError is not null)
+                {
+                    <p class="modal-error">✕ @ahaMoveError</p>
+                }
+            </section>
         }
-        <div class="actions">
-            <button class="btn-save" @onclick="AddStaff">Tạo tài khoản</button>
-        </div>
-    </section>
 
-    @* ===== CÂU TRẢ LỜI MẪU ===== *@
-    <section class="channel-card">
-        <header>
-            <span class="channel-dot" style="background:#0f766e"></span>
-            <h2>⚡ Câu trả lời mẫu</h2>
-            <span class="status-badge connected">@quickList.Count mẫu</span>
-        </header>
-        <p class="settings-hint">Các mẫu này hiện thành nút bấm nhanh ngay trên khung chat để nhân viên chèn vào tin trả lời.</p>
-        <div class="quick-list">
-            @foreach (var q in quickList)
-            {
-                <div class="quick-row">
-                    <span class="quick-title">@q.Title</span>
-                    <span class="quick-content">@q.Content</span>
-                    <button class="quick-del" @onclick="() => DeleteQuick(q.Id)" title="Xóa">✕</button>
+        @* ================= TAB: NHÂN VIÊN & PHẢN HỒI ================= *@
+        @if (activeTab == "staff")
+        {
+            <section class="channel-card">
+                <header>
+                    <span class="channel-dot" style="background:#5b21b6"></span>
+                    <h2>👥 Tài khoản nhân viên</h2>
+                    <span class="status-badge connected">@staffList.Count tài khoản</span>
+                </header>
+                <div class="staff-list">
+                    @foreach (var s in staffList)
+                    {
+                        <div class="staff-row">
+                            <span class="staff-name">@s.DisplayName <span class="staff-username">(@s.Username)</span></span>
+                            @if (s.IsAdmin)
+                            {
+                                <span class="staff-badge admin">Admin</span>
+                            }
+                            @if (!s.IsActive)
+                            {
+                                <span class="staff-badge off">Đã khóa</span>
+                            }
+                            <span class="staff-actions">
+                                @if (s.IsActive)
+                                {
+                                    <button @onclick="() => ToggleActive(s.Id, false)">Khóa</button>
+                                }
+                                else
+                                {
+                                    <button @onclick="() => ToggleActive(s.Id, true)">Mở lại</button>
+                                }
+                            </span>
+                        </div>
+                    }
                 </div>
-            }
-        </div>
-        <h4 class="sub-head">＋ Thêm mẫu</h4>
-        <div class="fields">
-            <label>Tiêu đề (nút) <input @bind="newQuickTitle" placeholder="vd: Chào hỏi" /></label>
-        </div>
-        <label class="full-field">Nội dung
-            <textarea @bind="newQuickContent" rows="2" placeholder="vd: Dạ shop chào bạn, shop có thể giúp gì cho bạn ạ?"></textarea>
-        </label>
-        <div class="actions">
-            <button class="btn-save" @onclick="AddQuick">Thêm mẫu</button>
-        </div>
-    </section>
+                <h4 class="sub-head">＋ Thêm nhân viên</h4>
+                <div class="fields">
+                    <label>Tên đăng nhập <input @bind="newStaffUsername" placeholder="vd: nhanvien1" /></label>
+                    <label>Tên hiển thị <input @bind="newStaffName" placeholder="vd: Nguyễn Thị B" /></label>
+                    <label>Mật khẩu <input type="password" @bind="newStaffPassword" /></label>
+                    <label class="checkbox-field"><input type="checkbox" @bind="newStaffAdmin" /> Là quản trị viên</label>
+                </div>
+                @if (staffError is not null)
+                {
+                    <p class="modal-error">✕ @staffError</p>
+                }
+                <div class="actions">
+                    <button class="btn-save" @onclick="AddStaff">Tạo tài khoản</button>
+                </div>
+            </section>
 
-    <p class="settings-note">
-        ⚠ Nút <b>Kết nối</b> chỉ hoạt động khi app chạy trên domain HTTPS công khai (đã deploy),
-        vì các nền tảng sẽ chuyển hướng về đúng URL đã khai báo. Khi chạy localhost hãy dùng ngrok.
-    </p>
+            <section class="channel-card">
+                <header>
+                    <span class="channel-dot" style="background:#0f766e"></span>
+                    <h2>⚡ Câu trả lời mẫu</h2>
+                    <span class="status-badge connected">@quickList.Count mẫu</span>
+                </header>
+                <p class="settings-hint">Các mẫu này hiện thành nút bấm nhanh ngay trên khung chat để nhân viên chèn vào tin trả lời.</p>
+                <div class="quick-list">
+                    @foreach (var q in quickList)
+                    {
+                        <div class="quick-row">
+                            <span class="quick-title">@q.Title</span>
+                            <span class="quick-content">@q.Content</span>
+                            <button class="quick-del" @onclick="() => DeleteQuick(q.Id)" title="Xóa">✕</button>
+                        </div>
+                    }
+                </div>
+                <h4 class="sub-head">＋ Thêm mẫu</h4>
+                <div class="fields">
+                    <label>Tiêu đề (nút) <input @bind="newQuickTitle" placeholder="vd: Chào hỏi" /></label>
+                </div>
+                <label class="full-field">Nội dung
+                    <textarea @bind="newQuickContent" rows="2" placeholder="vd: Dạ shop chào bạn, shop có thể giúp gì cho bạn ạ?"></textarea>
+                </label>
+                <div class="actions">
+                    <button class="btn-save" @onclick="AddQuick">Thêm mẫu</button>
+                </div>
+            </section>
+        }
+
+        @* ================= TAB: NHẬT KÝ WEBHOOK ================= *@
+        @if (activeTab == "webhook")
+        {
+            <section class="channel-card">
+                <header>
+                    <span class="channel-dot" style="background:#475569"></span>
+                    <h2>📡 Nhật ký webhook (Hệ thống)</h2>
+                    <span class="status-badge @(webhookEntries.Count > 0 ? "connected" : "disconnected")">@webhookEntries.Count sự kiện</span>
+                </header>
+                <p class="settings-hint">
+                    Dùng để kiểm tra xem Webhook từ các kênh đã đổ về server thành công hay chưa.
+                </p>
+                <div class="actions" style="margin-bottom: 10px;">
+                    <button class="btn-sync" @onclick="RefreshWebhookLog">🔄 Làm mới</button>
+                </div>
+                @if (webhookEntries.Count == 0)
+                {
+                    <p class="panel-empty" style="margin-top:10px">Chưa có sự kiện webhook nào kể từ khi app khởi động.</p>
+                }
+                else
+                {
+                    <div class="webhook-log">
+                        @foreach (var e in webhookEntries.Take(50))
+                        {
+                            <div class="webhook-row @WebhookCss(e.Status)">
+                                <span class="wh-time">@e.At.ToLocalTime().ToString("HH:mm:ss dd/MM")</span>
+                                <span class="wh-channel">@Inbox_ChannelLabel(e.Channel)</span>
+                                <span class="wh-status">@WebhookLabel(e.Status)</span>
+                                <span class="wh-detail" title="@e.Detail">@e.Detail</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </section>
+        }
+    </div>
 </div>
 
+@* ================= MODAL: THÊM / CẤU HÌNH KÊNH ================= *@
+@if (showChannelModal)
+{
+    <div class="pancake-modal-overlay" @onclick="CloseModal">
+        <div class="pancake-modal" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h2>@(isEditing ? "Cấu hình kết nối" : "Thêm kết nối mới")</h2>
+                <button class="btn-close" @onclick="CloseModal">✕</button>
+            </div>
+            <div class="modal-body">
+                <!-- Cột trái: Chọn nền tảng -->
+                <div class="modal-sidebar">
+                    <ul class="platform-list">
+                        <li class="@(modalPlatform == "zalo" ? "active" : "")" @onclick="@(() => modalPlatform = "zalo")">
+                            <span class="p-icon ch-zalo">Z</span> Zalo OA
+                        </li>
+                        <li class="@(modalPlatform == "messenger" ? "active" : "")" @onclick="@(() => modalPlatform = "messenger")">
+                            <span class="p-icon ch-messenger">F</span> Facebook Page
+                        </li>
+                        <li class="@(modalPlatform == "instagram" ? "active" : "")" @onclick="@(() => modalPlatform = "instagram")">
+                            <span class="p-icon ch-instagram">IG</span> Instagram
+                        </li>
+                        <li class="@(modalPlatform == "shopee" ? "active" : "")" @onclick="@(() => modalPlatform = "shopee")">
+                            <span class="p-icon ch-shopee">S</span> Shopee
+                        </li>
+                        <li class="@(modalPlatform == "tiktok" ? "active" : "")" @onclick="@(() => modalPlatform = "tiktok")">
+                            <span class="p-icon ch-tiktok">T</span> TikTok Shop
+                        </li>
+                        <li class="@(modalPlatform == "zalopersonal" ? "active" : "")" @onclick="@(() => modalPlatform = "zalopersonal")">
+                            <span class="p-icon ch-zalopersonal">Zp</span> Zalo Cá Nhân
+                        </li>
+                        <li class="@(modalPlatform == "threads" ? "active" : "")" @onclick="@(() => modalPlatform = "threads")">
+                            <span class="p-icon ch-threads">TH</span> Threads
+                        </li>
+                        <li class="@(modalPlatform == "googlelocation" ? "active" : "")" @onclick="@(() => modalPlatform = "googlelocation")">
+                            <span class="p-icon ch-googlelocation">G</span> Google Location
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Cột phải: Form cấu hình -->
+                <div class="modal-content">
+                    @if (modalPlatform == "zalo")
+                    {
+                        <div class="platform-header">
+                            <h3>Zalo Official Account</h3>
+                            @StatusBadge(zalo.AccessToken, zalo.AccountName, zalo.TokenExpiresAt)
+                        </div>
+                        <details class="guide">
+                            <summary>📖 Cách lấy App ID và Secret Key</summary>
+                            <ol>
+                                <li>Cần có <b>Zalo Official Account đã xác thực</b> (tạo tại <a href="https://oa.zalo.me" target="_blank">oa.zalo.me</a> — cần giấy tờ doanh nghiệp/hộ kinh doanh).</li>
+                                <li>Vào <a href="https://developers.zalo.me" target="_blank">developers.zalo.me</a>, đăng nhập bằng Zalo → <b>Thêm ứng dụng mới</b>, điền tên rồi tạo.</li>
+                                <li>Trong trang ứng dụng, xem mục thông tin app: copy <b>ID ứng dụng</b> (App ID) và <b>Khóa bí mật</b> (App Secret Key).</li>
+                                <li>Vào mục <b>Official Account</b> trong app → <b>Liên kết OA</b> của bạn với ứng dụng.</li>
+                                <li>Vào mục <b>Cài đặt</b> → khai báo <b>Callback URL</b> bằng đúng URL hiển thị bên dưới.</li>
+                                <li>Vào mục <b>Webhook</b> → copy <b>Khóa bí mật</b> của phần Webhook (OA Secret Key) → điền vào ô bên dưới cùng.</li>
+                                <li>Đồng thời tại mục Webhook → nhập <b>Webhook URL</b> bên dưới, đăng ký sự kiện <b>user_send_text</b> (người dùng gửi tin nhắn).</li>
+                                <li>Bấm <b>Lưu</b> rồi <b>Kết nối Zalo</b> → đăng nhập tài khoản quản trị OA và đồng ý cấp quyền.</li>
+                            </ol>
+                        </details>
+                        <div class="fields">
+                            <label>App ID <input @bind="zalo.AppId" placeholder="Từ developers.zalo.me" /></label>
+                            <label>App Secret Key <input type="password" @bind="zalo.AppSecretKey" placeholder="Khóa ứng dụng (OAuth)" /></label>
+                            <label>OA Secret Key <input type="password" @bind="zalo.OaSecretKey" placeholder="Khóa Webhook" /></label>
+                        </div>
+                        <div class="urls">
+                            <div>Callback URL: <code>@BaseUrl/oauth/zalo/callback</code></div>
+                            <div>Webhook URL: <code>@BaseUrl/webhooks/zalo</code></div>
+                        </div>
+                        <div class="actions">
+                            <button class="btn-save" @onclick="SaveZalo">Lưu cấu hình</button>
+                            <button class="btn-connect" @onclick="ConnectZalo">Kết nối Zalo</button>
+                            @if (!string.IsNullOrEmpty(zalo.AccessToken))
+                            {
+                                <button class="btn-disconnect" @onclick="DisconnectZalo">Ngắt kết nối</button>
+                            }
+                        </div>
+                    }
+                    else if (modalPlatform == "messenger")
+                    {
+                        <div class="platform-header">
+                            <h3>Facebook Messenger</h3>
+                            @StatusBadge(messenger.PageAccessToken, messenger.AccountName, null)
+                        </div>
+                        <details class="guide">
+                            <summary>📖 Cách lấy App ID và App Secret</summary>
+                            <ol>
+                                <li>Cần có <b>Fanpage</b> và bạn là quản trị viên của page đó.</li>
+                                <li>Vào <a href="https://developers.facebook.com" target="_blank">developers.facebook.com</a> → <b>My Apps</b> → <b>Create App</b> → chọn loại <b>Business</b>.</li>
+                                <li>Trong app: <b>App Settings → Basic</b> → copy <b>App ID</b> và <b>App Secret</b> (bấm Show) → dán vào 2 ô bên dưới.</li>
+                                <li>Bấm <b>Add Product</b> → thêm <b>Facebook Login for Business</b> → vào <b>Settings</b> của nó → ô <b>Valid OAuth Redirect URIs</b>: dán Redirect URI bên dưới.</li>
+                                <li>Thêm tiếp sản phẩm <b>Messenger</b> → mục <b>Webhooks</b>: dán Webhook URL bên dưới + nhập <b>Verify Token</b> trùng với ô bên dưới → Verify and Save → subscribe trường <b>messages</b>.</li>
+                                <li>Bấm <b>Lưu</b> rồi <b>Kết nối Facebook</b> → đăng nhập, chọn Fanpage muốn nhận tin.</li>
+                            </ol>
+                        </details>
+                        <div class="fields">
+                            <label>App ID <input @bind="messenger.AppId" placeholder="Từ developers.facebook.com" /></label>
+                            <label>App Secret <input type="password" @bind="messenger.AppSecret" placeholder="Khóa bí mật của app" /></label>
+                            <label>Verify Token <input @bind="messenger.VerifyToken" placeholder="Chuỗi tự đặt cho webhook" /></label>
+                        </div>
+                        <div class="urls">
+                            <div>Redirect URI hợp lệ: <code>@BaseUrl/oauth/messenger/callback</code></div>
+                            <div>Webhook URL: <code>@BaseUrl/webhooks/messenger</code></div>
+                        </div>
+                        <div class="actions">
+                            <button class="btn-save" @onclick="SaveMessenger">Lưu cấu hình</button>
+                            <button class="btn-connect" @onclick="ConnectMessenger">Kết nối Facebook</button>
+                            @if (!string.IsNullOrEmpty(messenger.PageAccessToken))
+                            {
+                                <button class="btn-disconnect" @onclick="DisconnectMessenger">Ngắt kết nối</button>
+                            }
+                        </div>
+                    }
+                    else if (modalPlatform == "instagram")
+                    {
+                        <div class="platform-header">
+                            <h3>Instagram</h3>
+                            @StatusBadge(instagram.PageAccessToken, instagram.AccountName, null)
+                        </div>
+                        <details class="guide">
+                            <summary>📖 Cách kết nối Instagram</summary>
+                            <ol>
+                                <li>Cần có tài khoản Instagram Professional (Business/Creator) đã <b>liên kết với Fanpage Facebook</b>.</li>
+                                <li>Vào <a href="https://developers.facebook.com" target="_blank">developers.facebook.com</a> → <b>My Apps</b>, dùng chung App với Facebook Messenger.</li>
+                                <li>Đảm bảo đã xin quyền <code>instagram_basic</code>, <code>instagram_manage_messages</code>.</li>
+                                <li>Copy <b>App ID</b> và <b>App Secret</b> dán vào bên dưới.</li>
+                                <li>Vào phần <b>Webhooks</b> của sản phẩm Messenger → chọn <b>Instagram</b> ở ô thả xuống, đăng ký Webhook URL bên dưới, Verify Token bên dưới, subscribe trường <b>messages</b>.</li>
+                                <li>Bấm <b>Lưu</b> rồi <b>Kết nối Instagram</b> → đăng nhập bằng Facebook và cấp quyền.</li>
+                            </ol>
+                        </details>
+                        <div class="fields">
+                            <label>App ID <input @bind="instagram.AppId" placeholder="Từ developers.facebook.com" /></label>
+                            <label>App Secret <input type="password" @bind="instagram.AppSecret" placeholder="Khóa bí mật của app" /></label>
+                            <label>Verify Token <input @bind="instagram.VerifyToken" placeholder="Chuỗi tự đặt cho webhook" /></label>
+                        </div>
+                        <div class="urls">
+                            <div>Redirect URI hợp lệ: <code>@BaseUrl/oauth/instagram/callback</code></div>
+                            <div>Webhook URL (Instagram): <code>@BaseUrl/webhooks/instagram</code></div>
+                        </div>
+                        <div class="actions">
+                            <button class="btn-save" @onclick="SaveInstagram">Lưu cấu hình</button>
+                            <button class="btn-connect" @onclick="ConnectInstagram">Kết nối Instagram</button>
+                            @if (!string.IsNullOrEmpty(instagram.PageAccessToken))
+                            {
+                                <button class="btn-disconnect" @onclick="DisconnectInstagram">Ngắt kết nối</button>
+                            }
+                        </div>
+                    }
+                    else if (modalPlatform == "shopee")
+                    {
+                        <div class="platform-header">
+                            <h3>Shopee</h3>
+                            @StatusBadge(shopee.AccessToken, shopee.AccountName, shopee.TokenExpiresAt)
+                        </div>
+                        <details class="guide">
+                            <summary>📖 Cách lấy Partner ID và Partner Key</summary>
+                            <ol>
+                                <li>Vào <a href="https://open.shopee.com" target="_blank">open.shopee.com</a> → <b>Register</b> đăng ký tài khoản developer (Shopee duyệt hồ sơ, có thể mất vài ngày).</li>
+                                <li>Sau khi được duyệt: vào <b>Console</b> → <b>Create App</b>, chọn loại app phù hợp (Seller In-House nếu chỉ dùng cho shop của mình).</li>
+                                <li>Trong <b>App Information</b>: copy <b>Partner ID</b> và <b>Partner Key</b> (live key, không phải test/sandbox) → dán vào 2 ô bên dưới.</li>
+                                <li>Khai báo <b>Redirect domain</b> bằng domain bên dưới (chỉ cần domain, không cần path).</li>
+                                <li>Vào mục <b>Push Mechanism</b> → nhập Webhook URL bên dưới → bật sự kiện <b>Webchat</b> (tin nhắn chat).</li>
+                                <li>Lưu ý: app mới nằm ở môi trường test — cần <b>submit lên production</b> thì mới kết nối được shop thật.</li>
+                                <li>Bấm <b>Lưu</b> rồi <b>Kết nối Shopee</b> → đăng nhập tài khoản shop và xác nhận ủy quyền.</li>
+                            </ol>
+                        </details>
+                        <div class="fields">
+                            <label>Partner ID <input @bind="shopee.PartnerId" placeholder="Từ open.shopee.com" /></label>
+                            <label>Partner Key <input type="password" @bind="shopee.PartnerKey" placeholder="Khóa bí mật partner" /></label>
+                        </div>
+                        <div class="urls">
+                            <div>Redirect domain: <code>@BaseUrl</code></div>
+                            <div>Webhook URL: <code>@BaseUrl/webhooks/shopee</code></div>
+                        </div>
+                        <div class="actions">
+                            <button class="btn-save" @onclick="SaveShopee">Lưu cấu hình</button>
+                            <button class="btn-connect" @onclick="ConnectShopee">Kết nối Shopee</button>
+                            @if (!string.IsNullOrEmpty(shopee.AccessToken))
+                            {
+                                <button class="btn-disconnect" @onclick="DisconnectShopee">Ngắt kết nối</button>
+                            }
+                        </div>
+                    }
+                    else if (modalPlatform == "tiktok")
+                    {
+                        <div class="platform-header">
+                            <h3>TikTok Shop</h3>
+                            @StatusBadge(tiktok.AccessToken, tiktok.AccountName, tiktok.TokenExpiresAt)
+                        </div>
+                        <details class="guide">
+                            <summary>📖 Cách lấy App Key và App Secret</summary>
+                            <ol>
+                                <li>Cần có <b>TikTok Shop</b> đang hoạt động (tài khoản seller).</li>
+                                <li>Vào <a href="https://partner.tiktokshop.com" target="_blank">partner.tiktokshop.com</a> → đăng ký làm <b>Partner</b>, chọn loại <b>Developer</b> (chọn Self Developer nếu chỉ dùng cho shop của mình).</li>
+                                <li>Vào <b>App & Service</b> → <b>Create App</b>, điền thông tin, chọn khu vực có Việt Nam.</li>
+                                <li>Trong trang app: copy <b>App Key</b> và <b>App Secret</b> → dán vào 2 ô bên dưới.</li>
+                                <li>Khai báo <b>Redirect URL</b> bằng đúng URL bên dưới.</li>
+                                <li>Trong phần cấu hình app, chọn quyền (scope) <b>Customer Service / Buyer Messages</b>, và ở mục <b>Webhook</b> nhập Webhook URL bên dưới cho sự kiện tin nhắn mới.</li>
+                                <li>Bấm <b>Lưu</b> rồi <b>Kết nối TikTok</b> → đăng nhập tài khoản seller và đồng ý ủy quyền.</li>
+                            </ol>
+                        </details>
+                        <div class="fields">
+                            <label>App Key <input @bind="tiktok.AppKey" placeholder="Từ partner.tiktokshop.com" /></label>
+                            <label>App Secret <input type="password" @bind="tiktok.AppSecret" placeholder="Khóa bí mật của app" /></label>
+                        </div>
+                        <div class="urls">
+                            <div>Redirect URL: <code>@BaseUrl/oauth/tiktok/callback</code></div>
+                            <div>Webhook URL: <code>@BaseUrl/webhooks/tiktok</code></div>
+                        </div>
+                        <div class="actions">
+                            <button class="btn-save" @onclick="SaveTikTok">Lưu cấu hình</button>
+                            <button class="btn-connect" @onclick="ConnectTikTok">Kết nối TikTok</button>
+                            @if (!string.IsNullOrEmpty(tiktok.AccessToken))
+                            {
+                                <button class="btn-disconnect" @onclick="DisconnectTikTok">Ngắt kết nối</button>
+                            }
+                        </div>
+                    }
+                    else if (modalPlatform == "zalopersonal")
+                    {
+                        <div class="platform-header">
+                            <h3>Zalo Cá Nhân (Sidecar)</h3>
+                            @if (!string.IsNullOrEmpty(zaloPersonal.ApiKey))
+                            {
+                                <span class="status-badge connected">Đã cấu hình@(string.IsNullOrEmpty(zaloPersonal.AccountName) ? "" : $": {zaloPersonal.AccountName}")</span>
+                            }
+                            else
+                            {
+                                <span class="status-badge disconnected">Chưa cấu hình</span>
+                            }
+                        </div>
+                        <details class="guide">
+                            <summary>📖 Hướng dẫn tự động</summary>
+                            <p>Hệ thống ChumChat sẽ tự động khởi tạo tiến trình Node.js (Sidecar) ngầm để phục vụ bạn. Quá trình bật lần đầu có thể mất vài giây.</p>
+                        </details>
+                        <div class="actions">
+                            <button class="btn-sync" @onclick="ConnectZaloPersonal" disabled="@syncing">
+                                @(syncing ? "Đang khởi động..." : "Bật Zalo Cá Nhân & Lấy mã QR")
+                            </button>
+                            @if (!string.IsNullOrEmpty(zaloPersonal.ApiKey))
+                            {
+                                <button class="btn-disconnect" @onclick="DisconnectZaloPersonal">Tắt kết nối</button>
+                            }
+                        </div>
+                        @if (zaloQr is not null)
+                        {
+                            <div class="qr-box" style="margin-top: 20px; text-align: center;">
+                                <p><b>Quét mã này bằng Zalo trên điện thoại:</b></p>
+                                <img class="qr-img" src="@zaloQr" alt="Mã QR đăng nhập Zalo" style="width: 250px; border: 1px solid #ccc; border-radius: 8px; margin-top: 10px;" />
+                            </div>
+                        }
+                    }
+
+                    else if (modalPlatform == "messengerpersonal")
+                    {
+                        <div class="platform-header">
+                            <h3>Messenger Cá Nhân (Sidecar)</h3>
+                            @if (!string.IsNullOrEmpty(messengerPersonal.ApiKey))
+                            {
+                                <span class="status-badge connected">Đã cấu hình@(string.IsNullOrEmpty(messengerPersonal.AccountName) ? "" : $": {messengerPersonal.AccountName}")</span>
+                            }
+                            else
+                            {
+                                <span class="status-badge disconnected">Chưa cấu hình</span>
+                            }
+                        </div>
+                        <details class="guide">
+                            <summary>📖 Hướng dẫn tự động</summary>
+                            <ol>
+                                <li>Dán chuỗi AppState (Cookie Facebook) vào ô bên dưới.</li>
+                                <li>Bấm <b>Bật Messenger Cá Nhân</b> để hệ thống tự chạy ngầm.</li>
+                            </ol>
+                        </details>
+                        <div class="fields">
+                            <label>AppState (Cookie JSON) <textarea @bind="messengerPersonal.AppState" rows="6" placeholder="Dán AppState vào đây"></textarea></label>
+                        </div>
+                        <div class="actions">
+                            <button class="btn-sync" @onclick="ConnectMessengerPersonal" disabled="@syncing">
+                                @(syncing ? "Đang kết nối..." : "Bật Messenger Cá Nhân")
+                            </button>
+                            @if (!string.IsNullOrEmpty(messengerPersonal.ApiKey))
+                            {
+                                <button class="btn-disconnect" @onclick="DisconnectMessengerPersonal">Tắt kết nối</button>
+                            }
+                        </div>
+                    }
+
+                    @if (modalPlatform == "threads")
+                    {
+                        <div class="platform-header">
+                            <h3>Threads Connection</h3>
+                            @StatusBadge(threads.PageAccessToken, threads.AccountName, null)
+                        </div>
+                        <details class="guide">
+                            <summary>📖 Cách lấy thông tin kết nối Threads</summary>
+                            <ol>
+                                <li>Vào <a href="https://developers.facebook.com" target="_blank">developers.facebook.com</a> và đăng ký ứng dụng Threads.</li>
+                                <li>Lấy <b>App ID</b> và <b>App Secret</b> của ứng dụng.</li>
+                                <li>Cấp quyền và lấy <b>Threads User Access Token</b>.</li>
+                                <li>Điền các thông số bên dưới để kích hoạt kết nối.</li>
+                            </ol>
+                        </details>
+                        <div class="fields">
+                            <label>App ID <input @bind="threads.AppId" placeholder="Threads App ID" /></label>
+                            <label>App Secret <input type="password" @bind="threads.AppSecret" placeholder="Threads App Secret" /></label>
+                            <label>Page Access Token <input type="password" @bind="threads.PageAccessToken" placeholder="Page / User Access Token" /></label>
+                            <label>Threads Account ID <input @bind="threads.ThreadsAccountId" placeholder="Threads Account ID" /></label>
+                            <label>Verify Token <input @bind="threads.VerifyToken" placeholder="Verify Token" /></label>
+                        </div>
+                        <div class="actions">
+                            <button class="btn-save" @onclick="SaveThreads">Lưu cấu hình</button>
+                            <button class="btn-connect" @onclick="ConnectThreads">Kết nối Threads</button>
+                            @if (!string.IsNullOrEmpty(threads.PageAccessToken))
+                            {
+                                <button class="btn-disconnect" @onclick="DisconnectThreads">Gỡ cấu hình</button>
+                            }
+                        </div>
+                    }
+
+                    @if (modalPlatform == "googlelocation")
+                    {
+                        <div class="platform-header">
+                            <h3>Google Business Location</h3>
+                            @StatusBadge(googleLocation.AccessToken, googleLocation.AccountName, googleLocation.TokenExpiresAt)
+                        </div>
+                        <details class="guide">
+                            <summary>📖 Cách lấy thông tin kết nối Google Maps / Business Profile</summary>
+                            <ol>
+                                <li>Tạo một dự án trên Google Cloud Console và kích hoạt <b>Google My Business Business Information API</b>.</li>
+                                <li>Tạo <b>OAuth Client ID</b> và lấy <b>Client ID / Client Secret</b>.</li>
+                                <li>Thực hiện OAuth cấp quyền để lấy <b>Access Token / Refresh Token</b>.</li>
+                                <li>Điền <b>Account ID</b> và <b>Location ID</b> địa điểm của bạn từ Google Business Profile.</li>
+                            </ol>
+                        </details>
+                        <div class="fields">
+                            <label>API Key <input @bind="googleLocation.ApiKey" placeholder="API Key" /></label>
+                            <label>Client ID <input @bind="googleLocation.ClientId" placeholder="Google OAuth Client ID" /></label>
+                            <label>Client Secret <input type="password" @bind="googleLocation.ClientSecret" placeholder="Google OAuth Client Secret" /></label>
+                            <label>Access Token <input type="password" @bind="googleLocation.AccessToken" placeholder="Access Token" /></label>
+                            <label>Refresh Token <input type="password" @bind="googleLocation.RefreshToken" placeholder="Refresh Token" /></label>
+                            <label>Account ID <input @bind="googleLocation.AccountId" placeholder="Account ID (ví dụ: accounts/123...)" /></label>
+                            <label>Location ID <input @bind="googleLocation.LocationId" placeholder="Location ID (ví dụ: locations/456...)" /></label>
+                        </div>
+                        <div class="actions">
+                            <button class="btn-save" @onclick="SaveGoogleLocation">Lưu cấu hình</button>
+                            @if (!string.IsNullOrEmpty(googleLocation.AccessToken))
+                            {
+                                <button class="btn-disconnect" @onclick="DisconnectGoogleLocation">Gỡ cấu hình</button>
+                            }
+                        </div>
+                    }
+
+                    @if (testResults.TryGetValue(GetChannelType(modalPlatform), out var testRes))
+                    {
+                        <p class="test-result @(testRes.Ok ? "ok" : "fail")" style="margin-top: 15px;">@(testRes.Ok ? "✔ " : "✕ ")@testRes.Message</p>
+                    }
+                    
+                    @if (isEditing)
+                    {
+                        <div style="margin-top: 20px; border-top: 1px solid #eee; padding-top: 15px;">
+                            <button class="btn-sync" @onclick="() => TestConnection(GetChannelType(modalPlatform))" disabled="@testing">🔎 Kiểm tra API</button>
+                            <button class="btn-sync" @onclick="() => SyncHistory(GetChannelType(modalPlatform))" disabled="@syncing">
+                                @(syncing ? "Đang đồng bộ…" : "⟳ Đồng bộ tin cũ")
+                            </button>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
+    private string activeTab = "channels";
+    private bool showChannelModal = false;
+    private string modalPlatform = "zalo";
+    private bool isEditing = false;
+
     private ZaloOptions zalo = new();
     private MessengerOptions messenger = new();
     private ShopeeOptions shopee = new();
     private TikTokShopOptions tiktok = new();
+    private InstagramOptions instagram = new();
     private ZaloPersonalOptions zaloPersonal = new();
+    private MessengerPersonalOptions messengerPersonal = new();
+    private ThreadsOptions threads = new();
+    private GoogleLocationOptions googleLocation = new();
     private TrelloOptions trello = new();
+    private AhaMoveOptions ahaMove = new();
+    private bool isAhaMoveLoading;
+    private string? ahaMoveError;
 
     private List<Staff> staffList = [];
     private string newStaffUsername = "", newStaffName = "", newStaffPassword = "";
@@ -442,6 +785,40 @@
     private IReadOnlyList<WebhookLogEntry> webhookEntries = [];
 
     private void RefreshWebhookLog() => webhookEntries = WebhookLog.GetRecent();
+
+    private void OpenAddModal()
+    {
+        isEditing = false;
+        modalPlatform = "zalo";
+        showChannelModal = true;
+    }
+
+    private void OpenConfigModal(string platform)
+    {
+        isEditing = true;
+        modalPlatform = platform;
+        showChannelModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showChannelModal = false;
+        zaloQr = null;
+    }
+
+    private ChannelType GetChannelType(string platform) => platform switch
+    {
+        "zalo" => ChannelType.Zalo,
+        "messenger" => ChannelType.Messenger,
+        "shopee" => ChannelType.Shopee,
+        "tiktok" => ChannelType.TikTokShop,
+        "instagram" => ChannelType.Instagram,
+        "zalopersonal" => ChannelType.ZaloPersonal,
+        "messengerpersonal" => ChannelType.MessengerPersonal,
+        "threads" => ChannelType.Threads,
+        "googlelocation" => ChannelType.GoogleLocation,
+        _ => throw new ArgumentException("Unknown platform: " + platform)
+    };
 
     private static string WebhookLabel(string status) => status switch
     {
@@ -467,13 +844,17 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Sửa trên bản sao — chỉ ghi vào store khi bấm Lưu
         zalo = Clone(Store.Zalo);
         messenger = Clone(Store.Messenger);
         shopee = Clone(Store.Shopee);
         tiktok = Clone(Store.TikTokShop);
+        instagram = Clone(Store.Instagram);
         zaloPersonal = Clone(Store.ZaloPersonal);
+        messengerPersonal = Clone(Store.MessengerPersonal);
+        threads = Clone(Store.Threads);
+        googleLocation = Clone(Store.GoogleLocation);
         trello = Clone(Store.Trello);
+        ahaMove = Clone(Store.AhaMove);
 
         staffList = await StaffSvc.GetAllAsync();
         quickList = await QuickReplies.GetAllAsync();
@@ -497,6 +878,8 @@
         "messenger" => "Facebook Messenger",
         "shopee" => "Shopee",
         "tiktok" => "TikTok Shop",
+        "threads" => "Threads",
+        "googlelocation" => "Google Location",
         _ => key
     };
 
@@ -511,7 +894,7 @@
                 Đã kết nối@(string.IsNullOrEmpty(accountName) ? "" : $": {accountName}")
                 @if (expiresAt is not null)
                 {
-                    <em> · token hết hạn @expiresAt.Value.ToLocalTime().ToString("HH:mm dd/MM") (tự gia hạn)</em>
+                    <em> · token hết hạn @expiresAt.Value.ToLocalTime().ToString("HH:mm dd/MM")</em>
                 }
             </span>
         }
@@ -523,10 +906,141 @@
 
     private async Task SaveZalo() { await Store.SaveZaloAsync(Clone(zalo)); ShowSaved(); }
     private async Task SaveMessenger() { await Store.SaveMessengerAsync(Clone(messenger)); ShowSaved(); }
+    private async Task SaveInstagram() { await Store.SaveInstagramAsync(Clone(instagram)); ShowSaved(); }
     private async Task SaveShopee() { await Store.SaveShopeeAsync(Clone(shopee)); ShowSaved(); }
     private async Task SaveTikTok() { await Store.SaveTikTokAsync(Clone(tiktok)); ShowSaved(); }
     private async Task SaveTrello() { await Store.SaveTrelloAsync(Clone(trello)); ShowSaved(); }
-    private async Task SaveZaloPersonal() { await Store.SaveZaloPersonalAsync(Clone(zaloPersonal)); ShowSaved(); }
+
+    private async Task SaveAhaMove()
+    {
+        isAhaMoveLoading = true;
+        ahaMoveError = null;
+        StateHasChanged();
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(ahaMove.Mobile) || string.IsNullOrWhiteSpace(ahaMove.ApiKey))
+            {
+                throw new Exception("Vui lòng nhập Số điện thoại và API Key.");
+            }
+
+            // Get token
+            var token = await AhaMoveSvc.AuthenticateAsync(ahaMove.Mobile, ahaMove.ApiKey, ahaMove.SenderName);
+            ahaMove.Token = token;
+
+            // Optional: Geocode the sender address if changed
+            if (!string.IsNullOrWhiteSpace(ahaMove.SenderAddress))
+            {
+                var coords = await AhaMoveSvc.GeocodeAddressAsync(ahaMove.SenderAddress);
+                ahaMove.SenderLat = coords.Lat;
+                ahaMove.SenderLng = coords.Lng;
+            }
+
+            await Store.SaveAhaMoveAsync(Clone(ahaMove));
+            ShowSaved();
+        }
+        catch (Exception ex)
+        {
+            ahaMoveError = ex.Message;
+        }
+        finally
+        {
+            isAhaMoveLoading = false;
+        }
+    }
+    private async Task ConnectZaloPersonal()
+    {
+        syncing = true;
+        StateHasChanged();
+        
+        await Store.SaveZaloPersonalAsync(Clone(zaloPersonal));
+        await SidecarManager.EnsureZaloSidecarRunningAsync();
+        zaloPersonal = Clone(Store.ZaloPersonal);
+
+        await Task.Delay(2000); // Đợi sidecar lên
+        await CheckZaloPersonalSidecar();
+        
+        syncing = false;
+        StateHasChanged();
+    }
+
+    private async Task ConnectMessengerPersonal()
+    {
+        syncing = true;
+        StateHasChanged();
+
+        await Store.SaveMessengerPersonalAsync(Clone(messengerPersonal));
+        await SidecarManager.EnsureMessengerSidecarRunningAsync();
+        messengerPersonal = Clone(Store.MessengerPersonal);
+
+        try
+        {
+            var client = HttpFactory.CreateClient();
+            var req = new HttpRequestMessage(HttpMethod.Post, messengerPersonal.SidecarUrl.TrimEnd('/') + "/login");
+            if (!string.IsNullOrEmpty(messengerPersonal.ApiKey))
+                req.Headers.Add("X-Api-Key", messengerPersonal.ApiKey);
+            req.Content = ZaloAdapter.JsonContent(new { appState = messengerPersonal.AppState });
+            await client.SendAsync(req);
+        }
+        catch { /* ignore */ }
+
+        syncing = false;
+        StateHasChanged();
+        ShowSaved();
+    }
+    private async Task SaveThreads() { await Store.SaveThreadsAsync(Clone(threads)); ShowSaved(); }
+    private async Task SaveGoogleLocation() { await Store.SaveGoogleLocationAsync(Clone(googleLocation)); ShowSaved(); }
+
+    private async Task ConnectThreads()
+    {
+        await Store.SaveThreadsAsync(Clone(threads));
+        Nav.NavigateTo("/oauth/threads/start", forceLoad: true);
+    }
+
+    private async Task DisconnectThreads()
+    {
+        threads.PageAccessToken = threads.ThreadsAccountId = threads.AccountName = "";
+        await Store.SaveThreadsAsync(Clone(threads));
+        CloseModal();
+    }
+
+    private async Task DisconnectGoogleLocation()
+    {
+        googleLocation.AccessToken = googleLocation.RefreshToken = googleLocation.LocationId = googleLocation.AccountName = "";
+        googleLocation.TokenExpiresAt = null;
+        await Store.SaveGoogleLocationAsync(Clone(googleLocation));
+        CloseModal();
+    }
+
+    private async Task ConnectZalo()
+    {
+        await Store.SaveZaloAsync(Clone(zalo));
+        Nav.NavigateTo("/oauth/zalo/start", forceLoad: true);
+    }
+
+    private async Task ConnectMessenger()
+    {
+        await Store.SaveMessengerAsync(Clone(messenger));
+        Nav.NavigateTo("/oauth/messenger/start", forceLoad: true);
+    }
+
+    private async Task ConnectInstagram()
+    {
+        await Store.SaveInstagramAsync(Clone(instagram));
+        Nav.NavigateTo("/oauth/instagram/start", forceLoad: true);
+    }
+
+    private async Task ConnectShopee()
+    {
+        await Store.SaveShopeeAsync(Clone(shopee));
+        Nav.NavigateTo("/oauth/shopee/start", forceLoad: true);
+    }
+
+    private async Task ConnectTikTok()
+    {
+        await Store.SaveTikTokAsync(Clone(tiktok));
+        Nav.NavigateTo("/oauth/tiktok/start", forceLoad: true);
+    }
 
     private async Task AddStaff()
     {
@@ -565,7 +1079,6 @@
         quickList = await QuickReplies.GetAllAsync();
     }
 
-    // Gọi thử API đọc của nền tảng để xem token còn sống không (chẩn đoán không gửi được / mất avatar)
     private async Task TestConnection(ChannelType channel)
     {
         testing = true;
@@ -585,7 +1098,6 @@
         }
     }
 
-    // Gọi GET /health của sidecar để xem nó đã chạy, đã đăng nhập Zalo chưa, và lấy mã QR nếu chưa
     private async Task CheckZaloPersonalSidecar()
     {
         syncing = true;
@@ -627,6 +1139,29 @@
         }
     }
 
+    private async Task RestartZaloPersonalSidecar()
+    {
+        syncing = true;
+        banner = "Đang khởi động lại sidecar để lấy mã QR mới...";
+        bannerIsError = false;
+        zaloQr = null;
+        StateHasChanged();
+        try
+        {
+            var client = HttpFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(5);
+            var req = new HttpRequestMessage(HttpMethod.Post, zaloPersonal.SidecarUrl.TrimEnd('/') + "/restart");
+            if (!string.IsNullOrEmpty(zaloPersonal.ApiKey))
+                req.Headers.Add("x-api-key", zaloPersonal.ApiKey);
+            await client.SendAsync(req);
+        }
+        catch { /* Bỏ qua lỗi vì có thể sidecar đã tắt ngay lập tức */ }
+        
+        // Chờ sidecar khởi động lại và tạo mã QR mới
+        await Task.Delay(3000);
+        await CheckZaloPersonalSidecar();
+    }
+
     private async Task SyncHistory(ChannelType channel)
     {
         syncing = true;
@@ -659,9 +1194,17 @@
 
     private async Task DisconnectZaloPersonal()
     {
-        zaloPersonal.ApiKey = zaloPersonal.AccountName = "";
-        await Store.SaveZaloPersonalAsync(Clone(zaloPersonal));
+        await SidecarManager.StopZaloSidecarAsync();
+        zaloPersonal = Clone(Store.ZaloPersonal);
         zaloQr = null;
+        CloseModal();
+    }
+
+    private async Task DisconnectMessengerPersonal()
+    {
+        await SidecarManager.StopMessengerSidecarAsync();
+        messengerPersonal = Clone(Store.MessengerPersonal);
+        CloseModal();
     }
 
     private async Task DisconnectZalo()
@@ -669,12 +1212,21 @@
         zalo.AccessToken = zalo.RefreshToken = zalo.AccountName = "";
         zalo.TokenExpiresAt = null;
         await Store.SaveZaloAsync(Clone(zalo));
+        CloseModal();
     }
 
     private async Task DisconnectMessenger()
     {
         messenger.PageAccessToken = messenger.PageId = messenger.AccountName = "";
         await Store.SaveMessengerAsync(Clone(messenger));
+        CloseModal();
+    }
+
+    private async Task DisconnectInstagram()
+    {
+        instagram.PageAccessToken = instagram.PageId = instagram.AccountName = instagram.InstagramAccountId = "";
+        await Store.SaveInstagramAsync(Clone(instagram));
+        CloseModal();
     }
 
     private async Task DisconnectShopee()
@@ -682,6 +1234,7 @@
         shopee.AccessToken = shopee.RefreshToken = shopee.ShopId = shopee.AccountName = "";
         shopee.TokenExpiresAt = null;
         await Store.SaveShopeeAsync(Clone(shopee));
+        CloseModal();
     }
 
     private async Task DisconnectTikTok()
@@ -689,5 +1242,6 @@
         tiktok.AccessToken = tiktok.RefreshToken = tiktok.ShopCipher = tiktok.AccountName = "";
         tiktok.TokenExpiresAt = null;
         await Store.SaveTikTokAsync(Clone(tiktok));
+        CloseModal();
     }
 }

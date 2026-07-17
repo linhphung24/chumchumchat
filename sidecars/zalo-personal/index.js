@@ -148,7 +148,17 @@ app.use((req, res, next) => {
     next();
 });
 
-app.get("/health", (req, res) => res.json({ ok: true, loggedIn, qr: loggedIn ? null : currentQr }));
+app.get("/health", (req, res) => {
+    let qr = currentQr;
+    if (!loggedIn && !qr && fs.existsSync("./qr.png")) {
+        try {
+            qr = "data:image/png;base64," + fs.readFileSync("./qr.png").toString("base64");
+        } catch (e) {
+            console.warn("Lỗi đọc file qr.png:", e.message);
+        }
+    }
+    res.json({ ok: true, loggedIn, qr: loggedIn ? null : qr });
+});
 
 app.post("/send", async (req, res) => {
     const { threadId, text } = req.body || {};
@@ -207,12 +217,30 @@ app.post("/send-file", async (req, res) => {
         res.status(500).json({ error: String(err.message || err) });
     }
 });
+app.post("/logout", (req, res) => {
+    console.log("[sidecar] Nhận lệnh gỡ tài khoản, đang xóa credentials...");
+    try {
+        if (fs.existsSync(CREDENTIALS_FILE)) fs.unlinkSync(CREDENTIALS_FILE);
+        if (fs.existsSync("./qr.png")) fs.unlinkSync("./qr.png");
+    } catch (e) {
+        console.warn("Lỗi khi xóa credentials:", e.message);
+    }
+    res.json({ ok: true });
+    setTimeout(() => process.exit(1), 500); // Thoát để PM2/Systemd tự khởi động lại
+});
+
+app.post("/restart", (req, res) => {
+    console.log("[sidecar] Nhận lệnh khởi động lại để làm mới QR...");
+    res.json({ ok: true });
+    setTimeout(() => process.exit(1), 500); // Thoát để PM2/Systemd tự khởi động lại
+});
 
 app.listen(PORT, () => console.log(`[sidecar] HTTP chạy tại http://localhost:${PORT}`));
 
 login()
     .then(startListener)
     .catch((err) => {
-        console.error("[zalo] Đăng nhập thất bại:", err);
-        console.error("Xóa credentials.json rồi chạy lại nếu lỗi lặp lại.");
+        console.error("[zalo] Đăng nhập thất bại (có thể do hết hạn QR):", err);
+        console.error("Sidecar sẽ tự thoát để khởi động lại và tạo mã QR mới...");
+        process.exit(1);
     });

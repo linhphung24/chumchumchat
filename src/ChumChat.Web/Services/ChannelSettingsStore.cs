@@ -18,9 +18,15 @@ public class ChannelSettingsStore(
     private MessengerOptions messenger = new();
     private ShopeeOptions shopee = new();
     private TikTokShopOptions tikTok = new();
+    private InstagramOptions instagram = new();
     private ZaloPersonalOptions zaloPersonal = new();
+    private MessengerPersonalOptions messengerPersonal = new();
+    private ThreadsOptions threads = new();
+    private GoogleLocationOptions googleLocation = new();
     private TrelloOptions trello = new();
+    private AhaMoveOptions ahaMove = new();
     private AiOptions ai = new();
+    private VapidSettings? vapid;
 
     public event Action? Changed;
 
@@ -28,9 +34,15 @@ public class ChannelSettingsStore(
     public MessengerOptions Messenger => messenger;
     public ShopeeOptions Shopee => shopee;
     public TikTokShopOptions TikTokShop => tikTok;
+    public InstagramOptions Instagram => instagram;
     public ZaloPersonalOptions ZaloPersonal => zaloPersonal;
+    public MessengerPersonalOptions MessengerPersonal => messengerPersonal;
+    public ThreadsOptions Threads => threads;
+    public GoogleLocationOptions GoogleLocation => googleLocation;
     public TrelloOptions Trello => trello;
+    public AhaMoveOptions AhaMove => ahaMove;
     public AiOptions Ai => ai;
+    public VapidSettings Vapid => vapid ?? new();
 
     // Gọi một lần lúc khởi động, sau khi database sẵn sàng
     public async Task InitializeAsync()
@@ -42,10 +54,40 @@ public class ChannelSettingsStore(
         messenger = Load<MessengerOptions>(rows, ChannelType.Messenger, "Messenger");
         shopee = Load<ShopeeOptions>(rows, ChannelType.Shopee, "Shopee");
         tikTok = Load<TikTokShopOptions>(rows, ChannelType.TikTokShop, "TikTokShop");
+        instagram = Load<InstagramOptions>(rows, ChannelType.Instagram, "Instagram");
         zaloPersonal = Load<ZaloPersonalOptions>(rows, ChannelType.ZaloPersonal, "ZaloPersonal");
+        messengerPersonal = Load<MessengerPersonalOptions>(rows, ChannelType.MessengerPersonal, "MessengerPersonal");
+        threads = Load<ThreadsOptions>(rows, ChannelType.Threads, "Threads");
+        googleLocation = Load<GoogleLocationOptions>(rows, ChannelType.GoogleLocation, "GoogleLocation");
 
         trello = await LoadAppSettingAsync<TrelloOptions>(db, "Trello");
+        ahaMove = await LoadAppSettingAsync<AhaMoveOptions>(db, "AhaMove");
         ai = await LoadAppSettingAsync<AiOptions>(db, "Ai");
+
+        vapid = await LoadAppSettingAsync<VapidSettings>(db, "Vapid");
+        if (string.IsNullOrEmpty(vapid.PublicKey))
+        {
+            try
+            {
+                var keys = WebPush.VapidHelper.GenerateVapidKeys();
+                vapid.PublicKey = keys.PublicKey;
+                vapid.PrivateKey = keys.PrivateKey;
+
+                var row = await db.AppSettings.FirstOrDefaultAsync(s => s.Key == "Vapid");
+                if (row is null)
+                {
+                    row = new AppSetting { Key = "Vapid" };
+                    db.AppSettings.Add(row);
+                }
+                row.Json = JsonSerializer.Serialize(vapid, JsonOpts);
+                await db.SaveChangesAsync();
+                logger.LogInformation("VAPID Keys generated and saved successfully for Web Push.");
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to generate VAPID keys for Web Push");
+            }
+        }
     }
 
     private async Task<T> LoadAppSettingAsync<T>(AppDbContext db, string key) where T : new()
@@ -85,6 +127,7 @@ public class ChannelSettingsStore(
     }
 
     public Task SaveTrelloAsync(TrelloOptions options) => SaveAppSettingAsync("Trello", options, () => trello = options);
+    public Task SaveAhaMoveAsync(AhaMoveOptions options) => SaveAppSettingAsync("AhaMove", options, () => ahaMove = options);
     public Task SaveAiAsync(AiOptions options) => SaveAppSettingAsync("Ai", options, () => ai = options);
 
     private async Task SaveAppSettingAsync<T>(string key, T options, Action applyToCache)
@@ -106,7 +149,11 @@ public class ChannelSettingsStore(
     public Task SaveMessengerAsync(MessengerOptions options) => SaveAsync(ChannelType.Messenger, options, () => messenger = options);
     public Task SaveShopeeAsync(ShopeeOptions options) => SaveAsync(ChannelType.Shopee, options, () => shopee = options);
     public Task SaveZaloPersonalAsync(ZaloPersonalOptions options) => SaveAsync(ChannelType.ZaloPersonal, options, () => zaloPersonal = options);
+    public Task SaveMessengerPersonalAsync(MessengerPersonalOptions options) => SaveAsync(ChannelType.MessengerPersonal, options, () => messengerPersonal = options);
     public Task SaveTikTokAsync(TikTokShopOptions options) => SaveAsync(ChannelType.TikTokShop, options, () => tikTok = options);
+    public Task SaveInstagramAsync(InstagramOptions options) => SaveAsync(ChannelType.Instagram, options, () => instagram = options);
+    public Task SaveThreadsAsync(ThreadsOptions options) => SaveAsync(ChannelType.Threads, options, () => threads = options);
+    public Task SaveGoogleLocationAsync(GoogleLocationOptions options) => SaveAsync(ChannelType.GoogleLocation, options, () => googleLocation = options);
 
     private async Task SaveAsync(ChannelType channel, object options, Action applyToCache)
     {
@@ -124,4 +171,11 @@ public class ChannelSettingsStore(
         applyToCache();
         Changed?.Invoke();
     }
+}
+
+public class VapidSettings
+{
+    public string PublicKey { get; set; } = "";
+    public string PrivateKey { get; set; } = "";
+    public string Subject { get; set; } = "mailto:admin@chumchumbakery.com";
 }

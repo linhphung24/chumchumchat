@@ -8,7 +8,14 @@ public enum ChannelType
     TikTokShop,
 
     // Zalo tài khoản cá nhân, qua sidecar zca-js (unofficial — có rủi ro khóa tài khoản)
-    ZaloPersonal
+    ZaloPersonal,
+    
+    // Facebook Messenger tài khoản cá nhân, qua sidecar (unofficial)
+    MessengerPersonal,
+    
+    Instagram,
+    Threads,
+    GoogleLocation
 }
 
 public enum MessageDirection
@@ -184,6 +191,10 @@ public class Order
 
     // Danh sách sản phẩm trong đơn
     public List<OrderItem> Items { get; set; } = [];
+
+    // Giao hàng Ahamove
+    public string? AhamoveOrderId { get; set; }
+    public string? AhamoveTrackingLink { get; set; }
 }
 
 // Dòng sản phẩm trong đơn hàng
@@ -249,4 +260,14 @@ public class Message
     public string? Error { get; set; }
 
     public DateTime SentAt { get; set; }
+}
+
+public class PushSubscription
+{
+    public int Id { get; set; }
+    public int StaffId { get; set; }
+    public string Endpoint { get; set; } = "";
+    public string P256dh { get; set; } = "";
+    public string Auth { get; set; } = "";
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

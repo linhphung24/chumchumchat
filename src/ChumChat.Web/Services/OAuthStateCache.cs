@@ -13,6 +13,7 @@ public class OAuthStateCache
     private sealed record Entry(ChannelType Channel, DateTime ExpiresAt)
     {
         public List<FacebookPage>? Pages { get; set; }
+        public string? CodeVerifier { get; set; }
     }
 
     private readonly ConcurrentDictionary<string, Entry> entries = new();
@@ -38,6 +39,15 @@ public class OAuthStateCache
 
     public List<FacebookPage>? GetPages(string state) =>
         entries.TryGetValue(state, out var e) && e.ExpiresAt > DateTime.UtcNow ? e.Pages : null;
+
+    public void StoreCodeVerifier(string state, string verifier)
+    {
+        if (entries.TryGetValue(state, out var e))
+            e.CodeVerifier = verifier;
+    }
+
+    public string? GetCodeVerifier(string state) =>
+        entries.TryGetValue(state, out var e) && e.ExpiresAt > DateTime.UtcNow ? e.CodeVerifier : null;
 
     public void Remove(string state) => entries.TryRemove(state, out _);
 

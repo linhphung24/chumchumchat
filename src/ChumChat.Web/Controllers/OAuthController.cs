@@ -28,8 +28,20 @@ public class OAuthController(
             return SettingsRedirect("zalo", error: "Nhập App ID và Secret Key của Zalo trước khi kết nối");
 
         var state = states.Create(ChannelType.Zalo);
+        
+        // Tạo PKCE code_verifier & code_challenge cho Zalo OAuth v4
+        var verifier = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
+        using var sha256 = SHA256.Create();
+        var challengeBytes = sha256.ComputeHash(Encoding.ASCII.GetBytes(verifier));
+        var challenge = Convert.ToBase64String(challengeBytes)
+            .Replace("+", "-")
+            .Replace("/", "_")
+            .TrimEnd('=');
+
+        states.StoreCodeVerifier(state, verifier);
+
         var redirect = Uri.EscapeDataString($"{BaseUrl}/oauth/zalo/callback");
-        return Redirect($"https://oauth.zaloapp.com/v4/oa/permission?app_id={o.AppId}&redirect_uri={redirect}&state={state}");
+        return Redirect($"https://oauth.zaloapp.com/v4/oa/permission?app_id={o.AppId}&redirect_uri={redirect}&code_challenge={challenge}&state={state}");
     }
 
     [HttpGet("zalo/callback")]
@@ -37,9 +49,14 @@ public class OAuthController(
     {
         if (!states.Validate(state, ChannelType.Zalo))
             return SettingsRedirect("zalo", error: "Phiên kết nối hết hạn, thử lại");
+        
+        var verifier = states.GetCodeVerifier(state!);
         states.Remove(state!);
+
         if (string.IsNullOrEmpty(code))
             return SettingsRedirect("zalo", error: "Zalo không trả về mã cấp quyền");
+        if (string.IsNullOrEmpty(verifier))
+            return SettingsRedirect("zalo", error: "Không tìm thấy mã xác thực phiên kết nối (code verifier), thử lại");
 
         var o = settings.Zalo;
         var client = httpClientFactory.CreateClient();
@@ -49,10 +66,11 @@ public class OAuthController(
             {
                 ["code"] = code,
                 ["app_id"] = o.AppId,
-                ["grant_type"] = "authorization_code"
+                ["grant_type"] = "authorization_code",
+                ["code_verifier"] = verifier
             })
         };
-        request.Headers.Add("secret_key", o.OaSecretKey);
+        request.Headers.Add("secret_key", o.AppSecretKey);
 
         var response = await client.SendAsync(request);
         var body = await response.Content.ReadAsStringAsync();
@@ -61,7 +79,7 @@ public class OAuthController(
         if (!doc.RootElement.TryGetProperty("access_token", out var token))
         {
             logger.LogError("Zalo OAuth lỗi: {Body}", body);
-            return SettingsRedirect("zalo", error: "Zalo từ chối cấp token — kiểm tra Secret Key và callback URL đã khai báo trên developers.zalo.me");
+            return SettingsRedirect("zalo", error: $"Zalo từ chối cấp token — Chi tiết phản hồi từ Zalo: {body}");
         }
 
         o.AccessToken = token.GetString() ?? "";
@@ -173,6 +191,119 @@ public class OAuthController(
             content: null);
         if (!response.IsSuccessStatusCode)
             logger.LogWarning("Không subscribe được webhook cho Page {Page}: {Body}",
+                page.Name, await response.Content.ReadAsStringAsync());
+    }
+
+    // ============ INSTAGRAM ============
+
+    [HttpGet("instagram/start")]
+    public IActionResult InstagramStart()
+    {
+        var o = settings.Instagram;
+        if (string.IsNullOrEmpty(o.AppId) || string.IsNullOrEmpty(o.AppSecret))
+            return SettingsRedirect("instagram", error: "Nhập App ID và App Secret của Facebook trước khi kết nối");
+
+        var state = states.Create(ChannelType.Instagram);
+        var redirect = Uri.EscapeDataString($"{BaseUrl}/oauth/instagram/callback");
+        var scope = "instagram_basic,instagram_manage_messages,pages_show_list,pages_manage_metadata";
+        return Redirect($"https://www.facebook.com/v21.0/dialog/oauth?client_id={o.AppId}&redirect_uri={redirect}&state={state}&response_type=code&scope={scope}");
+    }
+
+    [HttpGet("instagram/callback")]
+    public async Task<IActionResult> InstagramCallback(string? code, string? state)
+    {
+        if (!states.Validate(state, ChannelType.Instagram))
+            return SettingsRedirect("instagram", error: "Phiên kết nối hết hạn, thử lại");
+        if (string.IsNullOrEmpty(code))
+            return SettingsRedirect("instagram", error: "Facebook không trả về mã cấp quyền (có thể bạn đã bấm Hủy)");
+
+        var o = settings.Instagram;
+        var client = httpClientFactory.CreateClient();
+        var redirect = Uri.EscapeDataString($"{BaseUrl}/oauth/instagram/callback");
+
+        // Bước 1: code → user token ngắn hạn
+        var tokenBody = await client.GetStringAsync(
+            $"https://graph.facebook.com/v21.0/oauth/access_token?client_id={o.AppId}&redirect_uri={redirect}&client_secret={o.AppSecret}&code={Uri.EscapeDataString(code)}");
+        var shortToken = JsonDocument.Parse(tokenBody).RootElement.GetProperty("access_token").GetString();
+
+        // Bước 2: đổi sang user token dài hạn
+        var longBody = await client.GetStringAsync(
+            $"https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id={o.AppId}&client_secret={o.AppSecret}&fb_exchange_token={Uri.EscapeDataString(shortToken!)}");
+        var longToken = JsonDocument.Parse(longBody).RootElement.GetProperty("access_token").GetString();
+
+        // Bước 3: lấy danh sách Page có liên kết Instagram
+        var pagesBody = await client.GetStringAsync(
+            $"https://graph.facebook.com/v21.0/me/accounts?fields=id,name,access_token,instagram_business_account&access_token={Uri.EscapeDataString(longToken!)}");
+        using var pagesDoc = JsonDocument.Parse(pagesBody);
+
+        var pages = new List<OAuthStateCache.FacebookPage>();
+        foreach (var p in pagesDoc.RootElement.GetProperty("data").EnumerateArray())
+        {
+            if (p.TryGetProperty("instagram_business_account", out var ig) && ig.TryGetProperty("id", out var igId))
+            {
+                var pageName = p.GetProperty("name").GetString() ?? "";
+                pages.Add(new OAuthStateCache.FacebookPage(
+                    p.GetProperty("id").GetString() ?? "",
+                    $"{pageName} (IG ID: {igId.GetString()})",
+                    p.GetProperty("access_token").GetString() ?? ""));
+            }
+        }
+
+        if (pages.Count == 0)
+            return SettingsRedirect("instagram", error: "Tài khoản Facebook này không quản lý Fanpage nào có liên kết Instagram Business");
+
+        if (pages.Count == 1)
+        {
+            states.Remove(state!);
+            await SaveInstagramPageAsync(pages[0]);
+            return SettingsRedirect("instagram", ok: true);
+        }
+
+        states.StorePages(state!, pages);
+        var links = string.Join("", pages.Select(p =>
+            $"<li><a href=\"/oauth/instagram/select?state={state}&page={p.Id}\">{System.Net.WebUtility.HtmlEncode(p.Name)}</a></li>"));
+        return Content($$"""
+            <!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><title>Chọn Tài khoản Instagram</title>
+            <style>body{font-family:system-ui;max-width:480px;margin:60px auto;padding:0 16px}
+            li{margin:10px 0;font-size:1.1rem}</style></head>
+            <body><h2>Chọn tài khoản Instagram muốn kết nối</h2><ul>{{links}}</ul></body></html>
+            """, "text/html");
+    }
+
+    [HttpGet("instagram/select")]
+    public async Task<IActionResult> InstagramSelect(string? state, string? page)
+    {
+        var pages = states.GetPages(state ?? "");
+        var chosen = pages?.FirstOrDefault(p => p.Id == page);
+        if (chosen is null)
+            return SettingsRedirect("instagram", error: "Phiên chọn tài khoản hết hạn, kết nối lại");
+
+        states.Remove(state!);
+        await SaveInstagramPageAsync(chosen);
+        return SettingsRedirect("instagram", ok: true);
+    }
+
+    private async Task SaveInstagramPageAsync(OAuthStateCache.FacebookPage page)
+    {
+        var o = settings.Instagram;
+        o.PageAccessToken = page.AccessToken;
+        o.PageId = page.Id;
+        o.AccountName = page.Name;
+
+        // Trích xuất lại IG ID từ tên (vì lúc nãy nhét tạm vào name để dễ parse)
+        var match = System.Text.RegularExpressions.Regex.Match(page.Name, @"\(IG ID: (\d+)\)");
+        if (match.Success)
+            o.InstagramAccountId = match.Groups[1].Value;
+
+        await settings.SaveInstagramAsync(o);
+
+        // Đăng ký app nhận webhook messages cho Page này
+        var client = httpClientFactory.CreateClient();
+        var response = await client.PostAsync(
+            $"https://graph.facebook.com/v21.0/{page.Id}/subscribed_apps?subscribed_fields=messages&access_token={Uri.EscapeDataString(page.AccessToken)}",
+            content: null);
+        if (!response.IsSuccessStatusCode)
+            logger.LogWarning("Không subscribe được webhook cho IG/Page {Page}: {Body}",
                 page.Name, await response.Content.ReadAsStringAsync());
     }
 

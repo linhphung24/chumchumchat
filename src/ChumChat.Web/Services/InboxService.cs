@@ -12,6 +12,7 @@ public class InboxService(
     IDbContextFactory<AppDbContext> dbFactory,
     IEnumerable<IChannelAdapter> adapters,
     InboxEvents events,
+    PushNotificationService pushNotificationService,
     ILogger<InboxService> logger)
 {
     // Trả về Id hội thoại nếu đã lưu tin mới; null nếu là webhook trùng (bỏ qua).
@@ -67,6 +68,15 @@ public class InboxService(
         conversation.UnreadCount++;
 
         await db.SaveChangesAsync();
+
+        // Gửi thông báo đẩy bất đồng bộ cho nhân viên liên quan (cả tin thật lẫn giả lập để test dễ dàng)
+        _ = pushNotificationService.SendNotificationToStaffAsync(
+            conversation.AssignedStaffId,
+            $"Tin mới từ {conversation.CustomerName} ({channel})",
+            Truncate(string.IsNullOrEmpty(inbound.Text) && inbound.AttachmentUrl is not null ? "📷 Gửi một file/ảnh đính kèm" : inbound.Text, 100),
+            $"/?c={conversation.Id}"
+        );
+
         events.NotifyChanged();
 
         if (!simulated)
@@ -193,6 +203,19 @@ public class InboxService(
         });
         await db.SaveChangesAsync();
         events.NotifyChanged();
+    }
+
+    public async Task UpdateOrderAhamoveAsync(int orderId, string ahamoveOrderId, string trackingLink)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var order = await db.Orders.FindAsync(orderId);
+        if (order is not null)
+        {
+            order.AhamoveOrderId = ahamoveOrderId;
+            order.AhamoveTrackingLink = trackingLink;
+            await db.SaveChangesAsync();
+            events.NotifyChanged();
+        }
     }
 
     // Tạo đơn hàng đầy đủ với danh sách sản phẩm (form tạo đơn kiểu Pancake)

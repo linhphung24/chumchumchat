@@ -189,7 +189,10 @@
                         {
                             <div class="rule-kw">Ý định (AI): @r.MatchDescription</div>
                         }
-                        <div class="rule-file">📎 <a href="@r.FileUrl" target="_blank">@r.FileName</a></div>
+                        @if (!string.IsNullOrEmpty(r.FileUrl))
+                        {
+                            <div class="rule-file">📎 <a href="@r.FileUrl" target="_blank">@r.FileName</a></div>
+                        }
                     </div>
                     <div class="rule-actions">
                         <button @onclick="() => ToggleRule(r.Id, !r.Enabled)">@(r.Enabled ? "Tắt" : "Bật")</button>
@@ -216,7 +219,7 @@
                 @(ruleFileName is null ? "📎 Chọn file (PDF/ảnh)" : $"📎 {ruleFileName}")
                 <InputFile OnChange="OnRuleFileSelected" accept=".pdf,image/*" disabled="@savingRule" />
             </label>
-            <button class="btn-connect" @onclick="AddRule" disabled="@(savingRule || string.IsNullOrWhiteSpace(newRuleName) || ruleFileUrl is null)">
+            <button class="btn-connect" @onclick="AddRule" disabled="@(savingRule || string.IsNullOrWhiteSpace(newRuleName) || (string.IsNullOrWhiteSpace(newRuleReplyText) && ruleFileUrl is null))">
                 @(savingRule ? "Đang lưu…" : "Lưu kịch bản")
             </button>
         </div>
@@ -439,7 +442,7 @@
 
     private async Task AddRule()
     {
-        if (string.IsNullOrWhiteSpace(newRuleName) || ruleFileUrl is null)
+        if (string.IsNullOrWhiteSpace(newRuleName) || (string.IsNullOrWhiteSpace(newRuleReplyText) && ruleFileUrl is null))
             return;
         savingRule = true;
         ruleError = null;
@@ -451,9 +454,9 @@
                 Keywords = newRuleKeywords.Trim(),
                 MatchDescription = newRuleDesc.Trim(),
                 ReplyText = newRuleReplyText.Trim(),
-                FileUrl = ruleFileUrl,
-                FileName = ruleFileName ?? "file",
-                FileMime = ruleFileMime ?? "application/octet-stream",
+                FileUrl = ruleFileUrl ?? "",
+                FileName = ruleFileName ?? "",
+                FileMime = ruleFileMime ?? "",
                 Enabled = true
             });
             newRuleName = newRuleKeywords = newRuleDesc = newRuleReplyText = "";

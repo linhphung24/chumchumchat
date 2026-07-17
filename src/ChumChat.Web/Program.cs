@@ -40,6 +40,10 @@ builder.Services.AddSingleton<IChannelAdapter, MessengerAdapter>();
 builder.Services.AddSingleton<IChannelAdapter, ShopeeAdapter>();
 builder.Services.AddSingleton<IChannelAdapter, TikTokShopAdapter>();
 builder.Services.AddSingleton<IChannelAdapter, ZaloPersonalAdapter>();
+builder.Services.AddSingleton<IChannelAdapter, MessengerPersonalAdapter>();
+builder.Services.AddSingleton<IChannelAdapter, InstagramAdapter>();
+builder.Services.AddSingleton<IChannelAdapter, ThreadsAdapter>();
+builder.Services.AddSingleton<IChannelAdapter, GoogleLocationAdapter>();
 builder.Services.AddSingleton<InboxEvents>();
 builder.Services.AddSingleton<InboxService>();
 builder.Services.AddSingleton<TrelloService>();
@@ -47,9 +51,13 @@ builder.Services.AddSingleton<AiKnowledgeService>();
 builder.Services.AddSingleton<AiSuggestionService>();
 builder.Services.AddSingleton<AutoReplyService>();
 builder.Services.AddSingleton<WebhookLogService>();
+builder.Services.AddSingleton<PushNotificationService>();
 builder.Services.AddScoped<StaffService>();
 builder.Services.AddScoped<QuickReplyService>();
 builder.Services.AddHostedService<TokenRefreshService>();
+builder.Services.AddSingleton<SidecarManagerService>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<SidecarManagerService>());
+builder.Services.AddSingleton<AhaMoveService>();
 
 var app = builder.Build();
 
@@ -98,6 +106,9 @@ using (var scope = app.Services.CreateScope())
             "TrelloCardUrl" TEXT NULL,
             "CreatedAt" TEXT NOT NULL);
         """);
+
+
+    // Tạo index
     db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_Orders_ConversationId" ON "Orders" ("ConversationId");""");
 
     foreach (var (col, ddl) in new[]
@@ -189,6 +200,8 @@ using (var scope = app.Services.CreateScope())
         ("PaymentMethod", """ALTER TABLE "Orders" ADD COLUMN "PaymentMethod" TEXT NOT NULL DEFAULT ''"""),
         ("ShippingFee", """ALTER TABLE "Orders" ADD COLUMN "ShippingFee" INTEGER NOT NULL DEFAULT 0"""),
         ("Discount", """ALTER TABLE "Orders" ADD COLUMN "Discount" INTEGER NOT NULL DEFAULT 0"""),
+        ("AhamoveOrderId", """ALTER TABLE "Orders" ADD COLUMN "AhamoveOrderId" TEXT NULL"""),
+        ("AhamoveTrackingLink", """ALTER TABLE "Orders" ADD COLUMN "AhamoveTrackingLink" TEXT NULL"""),
     })
     {
         var has = db.Database
@@ -197,6 +210,18 @@ using (var scope = app.Services.CreateScope())
         if (!has)
             db.Database.ExecuteSqlRaw(ddl);
     }
+
+    // Bảng lưu token thông báo Web Push
+    db.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS "PushSubscriptions" (
+            "Id" INTEGER NOT NULL CONSTRAINT "PK_PushSubscriptions" PRIMARY KEY AUTOINCREMENT,
+            "StaffId" INTEGER NOT NULL,
+            "Endpoint" TEXT NOT NULL,
+            "P256dh" TEXT NOT NULL,
+            "Auth" TEXT NOT NULL,
+            "CreatedAt" TEXT NOT NULL);
+        """);
+    db.Database.ExecuteSqlRaw("""CREATE INDEX IF NOT EXISTS "IX_PushSubscriptions_StaffId" ON "PushSubscriptions" ("StaffId");""");
 
     // Tạo tài khoản admin mặc định lần chạy đầu (admin / admin — đổi mật khẩu ngay sau khi đăng nhập)
     if (!db.Staff.Any())
@@ -237,5 +262,15 @@ app.UseStaticFiles(); // phục vụ file upload động (/uploads/...) — MapS
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+app.MapPost("/api/push/test", async (PushNotificationService pushService) =>
+{
+    var res = await pushService.SendTestNotificationAsync(
+        "🧪 Push Test từ ChumChat",
+        $"Kiểm thử gửi thông báo thành công lúc {DateTime.Now:HH:mm:ss}!",
+        "/"
+    );
+    return Results.Ok(res);
+}).RequireAuthorization();
 
 app.Run();

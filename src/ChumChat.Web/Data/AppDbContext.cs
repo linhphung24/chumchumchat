@@ -16,6 +16,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<AiFaq> AiFaqs => Set<AiFaq>();
     public DbSet<AiKnowledgeImage> AiKnowledgeImages => Set<AiKnowledgeImage>();
     public DbSet<AutoReplyRule> AutoReplyRules => Set<AutoReplyRule>();
+    public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -55,5 +56,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         modelBuilder.Entity<OrderItem>()
             .HasIndex(i => i.OrderId);
+
+        modelBuilder.Entity<PushSubscription>()
+            .HasIndex(s => s.StaffId);
     }
 }

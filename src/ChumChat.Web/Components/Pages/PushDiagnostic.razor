@@ -1,0 +1,289 @@
+@page "/push-diagnostic"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using ChumChat.Web.Data
+@using ChumChat.Web.Services
+@using Microsoft.EntityFrameworkCore
+@using System.Text.Json
+@inject PushNotificationService PushSvc
+@inject ChannelSettingsStore Store
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthState
+@inject IDbContextFactory<AppDbContext> DbFactory
+
+<PageTitle>Chẩn đoán Web Push — ChumChat</PageTitle>
+
+<div class="push-diagnostic-container" style="max-width: 800px; margin: 40px auto; padding: 20px; font-family: system-ui, sans-serif;">
+    <h1 style="color: #ff5722; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 20px;">
+        🧪 Chẩn đoán Web Push Notification
+    </h1>
+
+    <div style="background: #f9f9f9; padding: 15px; border-left: 4px solid #ff5722; margin-bottom: 20px; border-radius: 4px;">
+        Trang này giúp kiểm tra toàn bộ pipeline thông báo đẩy từ trình duyệt của bạn đến Server và Google Push Service.
+    </div>
+
+    <!-- HỆ THỐNG TRẠNG THÁI -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 30px;">
+        
+        <div style="background: white; border: 1px solid #ddd; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+            <h3 style="margin-top: 0; color: #666; font-size: 0.9rem; text-transform: uppercase;">1. VAPID Keys (Server)</h3>
+            <div style="font-size: 1.1rem; font-weight: bold; margin: 10px 0;">
+                @if (string.IsNullOrEmpty(publicKey))
+                {
+                    <span style="color: #d32f2f;">❌ Chưa cấu hình</span>
+                }
+                else
+                {
+                    <span style="color: #388e3c;">✅ Đã cấu hình</span>
+                }
+            </div>
+            <div style="font-size: 0.75rem; color: #888; word-break: break-all;">
+                Public Key: @(publicKey.Length > 20 ? publicKey.Substring(0, 20) + "..." : publicKey)
+            </div>
+        </div>
+
+        <div style="background: white; border: 1px solid #ddd; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+            <h3 style="margin-top: 0; color: #666; font-size: 0.9rem; text-transform: uppercase;">2. Quyền trình duyệt</h3>
+            <div style="font-size: 1.1rem; font-weight: bold; margin: 10px 0;">
+                @if (permissionStatus == "granted")
+                {
+                    <span style="color: #388e3c;">✅ Đã cấp quyền</span>
+                }
+                else if (permissionStatus == "denied")
+                {
+                    <span style="color: #d32f2f;">❌ Bị từ chối</span>
+                }
+                else
+                {
+                    <span style="color: #f57c00;">⚠️ Chưa cấp (@permissionStatus)</span>
+                }
+            </div>
+            <button style="padding: 4px 8px; font-size: 0.8rem; background: #e0e0e0; border: none; border-radius: 4px; cursor: pointer;" @onclick="RequestPermission">
+                Yêu cầu quyền
+            </button>
+        </div>
+
+        <div style="background: white; border: 1px solid #ddd; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+            <h3 style="margin-top: 0; color: #666; font-size: 0.9rem; text-transform: uppercase;">3. Service Worker</h3>
+            <div style="font-size: 1.1rem; font-weight: bold; margin: 10px 0;">
+                @if (swStatus == "Subscribed")
+                {
+                    <span style="color: #388e3c;">✅ Đã đăng ký (Subscribed)</span>
+                }
+                else if (swStatus == "NotSubscribed")
+                {
+                    <span style="color: #f57c00;">⚠️ Chưa đăng ký</span>
+                }
+                else
+                {
+                    <span style="color: #d32f2f;">❌ Lỗi: @swStatus</span>
+                }
+            </div>
+            <div style="font-size: 0.75rem; color: #888;">
+                Kiểm tra xem SW đã sẵn sàng chưa.
+            </div>
+        </div>
+
+        <div style="background: white; border: 1px solid #ddd; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+            <h3 style="margin-top: 0; color: #666; font-size: 0.9rem; text-transform: uppercase;">4. Đăng ký trong DB</h3>
+            <div style="font-size: 1.1rem; font-weight: bold; margin: 10px 0;">
+                @if (dbCount > 0)
+                {
+                    <span style="color: #388e3c;">✅ Đã lưu (@dbCount thiết bị)</span>
+                }
+                else
+                {
+                    <span style="color: #d32f2f;">❌ Chưa lưu</span>
+                }
+            </div>
+            <div style="font-size: 0.75rem; color: #888;">
+                Nhân viên hiện tại: Staff ID @currentStaffId
+            </div>
+        </div>
+
+    </div>
+
+    <!-- HÀNH ĐỘNG -->
+    <div style="background: #fff; border: 1px solid #ddd; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
+        <h3 style="margin-top: 0; margin-bottom: 15px;">🛠 Thao tác khắc phục & Kiểm tra</h3>
+        <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+            <button style="background: #2196f3; color: white; border: none; padding: 10px 20px; border-radius: 4px; font-weight: bold; cursor: pointer;" 
+                    @onclick="ReRegisterAsync">
+                🔄 Đăng ký lại thiết bị này
+            </button>
+            <button style="background: #4caf50; color: white; border: none; padding: 10px 20px; border-radius: 4px; font-weight: bold; cursor: pointer;" 
+                    @onclick="SendTestPushAsync" disabled="@loading">
+                🔔 Gửi thông báo test (Tất cả thiết bị)
+            </button>
+            <button style="background: #9e9e9e; color: white; border: none; padding: 10px 20px; border-radius: 4px; font-weight: bold; cursor: pointer;" 
+                    @onclick="RefreshStatusAsync">
+                🔄 Làm mới trạng thái
+            </button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(statusMessage))
+        {
+            <div style="margin-top: 15px; padding: 10px; background: #e3f2fd; border-radius: 4px; color: #0d47a1; font-family: monospace;">
+                ℹ️ @statusMessage
+            </div>
+        }
+    </div>
+
+    <!-- KẾT QUẢ TEST PUSH -->
+    @if (testResult is not null)
+    {
+        <div style="background: #fff; border: 1px solid #ddd; padding: 20px; border-radius: 8px;">
+            <h3 style="margin-top: 0; color: #333;">📊 Kết quả gửi Test Notification</h3>
+            <div style="margin: 15px 0;">
+                <p>Tổng số thiết bị tìm thấy: <strong>@testResult.TotalSubscriptions</strong></p>
+                <p>Gửi thành công: <strong style="color: #2e7d32;">@testResult.SuccessCount</strong></p>
+            </div>
+            
+            @if (testResult.Errors.Count > 0)
+            {
+                <div style="background: #ffebee; border-left: 4px solid #c62828; padding: 15px; border-radius: 4px;">
+                    <h4 style="margin-top: 0; color: #c62828;">❌ Lỗi phát sinh trong quá trình gửi:</h4>
+                    <ul style="margin: 0; padding-left: 20px; color: #c62828; font-family: monospace; font-size: 0.85rem;">
+                        @foreach (var err in testResult.Errors)
+                        {
+                            <li style="margin-bottom: 5px;">@err</li>
+                        }
+                    </ul>
+                </div>
+            }
+            else if (testResult.SuccessCount > 0)
+            {
+                <div style="background: #e8f5e9; border-left: 4px solid #2e7d32; padding: 15px; border-radius: 4px; color: #1b5e20;">
+                    🎉 Tất cả thông báo đã được chuyển đi thành công đến nhà mạng Google/Apple Push Service!
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private string publicKey = "";
+    private string permissionStatus = "Chưa kiểm tra";
+    private string swStatus = "Chưa kiểm tra";
+    private int dbCount = 0;
+    private int currentStaffId;
+    private string statusMessage = "";
+    private bool loading = false;
+    private PushNotificationService.PushTestResult? testResult;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var user = authState.User;
+        int.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out currentStaffId);
+        
+        publicKey = Store.Vapid.PublicKey;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await RefreshStatusAsync();
+        }
+    }
+
+    private async Task RefreshStatusAsync()
+    {
+        statusMessage = "Đang làm mới trạng thái...";
+        try
+        {
+            permissionStatus = await JS.InvokeAsync<string>("eval", "Notification.permission");
+            swStatus = await JS.InvokeAsync<string>("getPushSubscriptionStatus");
+            
+            await using var db = await DbFactory.CreateDbContextAsync();
+            dbCount = await db.PushSubscriptions.CountAsync(s => s.StaffId == currentStaffId);
+            
+            statusMessage = "Đã làm mới trạng thái lúc " + DateTime.Now.ToString("HH:mm:ss");
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            statusMessage = "Lỗi khi kiểm tra: " + ex.Message;
+        }
+    }
+
+    private async Task RequestPermission()
+    {
+        try
+        {
+            var res = await JS.InvokeAsync<string>("requestNotificationPermission");
+            permissionStatus = res;
+            await RefreshStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            statusMessage = "Không thể yêu cầu quyền: " + ex.Message;
+        }
+    }
+
+    private async Task ReRegisterAsync()
+    {
+        statusMessage = "Đang thực hiện đăng ký lại...";
+        testResult = null;
+        try
+        {
+            // Hủy đăng ký cũ
+            var endpoint = await JS.InvokeAsync<string>("unsubscribeUserFromPush");
+            if (!string.IsNullOrEmpty(endpoint))
+            {
+                await PushSvc.UnsubscribeAsync(endpoint);
+            }
+
+            // Yêu cầu quyền
+            var perm = await JS.InvokeAsync<string>("requestNotificationPermission");
+            if (perm != "granted")
+            {
+                statusMessage = "Thất bại: Quyền trình duyệt bị từ chối.";
+                await RefreshStatusAsync();
+                return;
+            }
+
+            // Đăng ký mới
+            var subJson = await JS.InvokeAsync<string>("subscribeUserToPush", publicKey);
+            using var doc = JsonDocument.Parse(subJson);
+            var root = doc.RootElement;
+            var newEndpoint = root.GetProperty("endpoint").GetString() ?? "";
+            var p256dh = root.GetProperty("p256dh").GetString() ?? "";
+            var auth = root.GetProperty("auth").GetString() ?? "";
+
+            await PushSvc.SubscribeAsync(currentStaffId, newEndpoint, p256dh, auth);
+            statusMessage = "Đăng ký thành công thiết bị này!";
+            await RefreshStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            statusMessage = "Lỗi đăng ký lại: " + ex.Message;
+        }
+    }
+
+    private async Task SendTestPushAsync()
+    {
+        loading = true;
+        testResult = null;
+        statusMessage = "Đang gửi thông báo test...";
+        try
+        {
+            testResult = await PushSvc.SendTestNotificationAsync(
+                "🧪 Push Test từ ChumChat",
+                $"Kiểm thử gửi thông báo thành công lúc {DateTime.Now:HH:mm:ss}!",
+                "/"
+            );
+            statusMessage = "Đã hoàn tất gửi push test.";
+        }
+        catch (Exception ex)
+        {
+            statusMessage = "Lỗi gửi push test: " + ex.Message;
+        }
+        finally
+        {
+            loading = false;
+            await RefreshStatusAsync();
+        }
+    }
+}

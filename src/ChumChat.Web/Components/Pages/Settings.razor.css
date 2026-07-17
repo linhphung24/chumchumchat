@@ -1,0 +1,338 @@
+/* ================= TAB NAVIGATION ================= */
+.dashboard-mode {
+    background-color: #f4f6f8;
+    padding: 20px;
+    border-radius: 8px;
+}
+.settings-tabs {
+    display: flex;
+    border-bottom: 2px solid #e2e8f0;
+    margin-bottom: 20px;
+}
+.tab-btn {
+    background: none;
+    border: none;
+    padding: 12px 24px;
+    font-size: 15px;
+    font-weight: 500;
+    color: #64748b;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+}
+.tab-btn:hover {
+    color: #0f172a;
+}
+.tab-btn.active {
+    color: #2563eb;
+    border-bottom-color: #2563eb;
+}
+
+/* ================= DASHBOARD & GRID ================= */
+.dashboard-toolbar {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+.search-box input {
+    padding: 8px 16px;
+    border: 1px solid #e2e8f0;
+    border-radius: 20px;
+    width: 250px;
+    font-size: 14px;
+}
+.btn-add-connection {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-weight: 500;
+}
+.btn-add-connection:hover {
+    background: #2563eb;
+}
+
+.connected-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+}
+.empty-channels {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 60px 20px;
+    background: white;
+    border-radius: 12px;
+    color: #64748b;
+}
+.empty-icon {
+    font-size: 48px;
+    margin-bottom: 10px;
+}
+
+.connected-card {
+    background: white;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 15px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+.connected-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.05);
+}
+.card-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: bold;
+    color: white;
+}
+.card-icon.ch-zalo { background: #0068ff; }
+.card-icon.ch-messenger { background: #0084ff; }
+.card-icon.ch-shopee { background: #ee4d2d; }
+.card-icon.ch-tiktok { background: #000000; }
+.card-icon.ch-zalopersonal { background: #0099ff; }
+.card-icon.ch-instagram { background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%); }
+.card-icon.ch-threads { background: #000000; }
+.card-icon.ch-googlelocation { background: #4285F4; }
+
+.card-info {
+    flex: 1;
+    min-width: 0;
+}
+.card-name {
+    font-weight: 600;
+    font-size: 15px;
+    color: #0f172a;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.card-meta {
+    font-size: 13px;
+    color: #64748b;
+    margin-top: 2px;
+}
+.card-status.ok {
+    font-size: 12px;
+    color: #10b981;
+    margin-top: 2px;
+}
+.card-actions button {
+    background: #f1f5f9;
+    border: none;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #475569;
+}
+.card-actions button:hover {
+    background: #e2e8f0;
+}
+
+/* ================= PANCAKE MODAL ================= */
+.pancake-modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(2px);
+}
+.pancake-modal {
+    background: white;
+    border-radius: 12px;
+    width: 850px;
+    max-width: 95%;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e2e8f0;
+}
+.modal-header h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+.btn-close {
+    background: none;
+    border: none;
+    font-size: 20px;
+    cursor: pointer;
+    color: #64748b;
+}
+.btn-close:hover { color: #ef4444; }
+
+.modal-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+.modal-sidebar {
+    width: 250px;
+    border-right: 1px solid #e2e8f0;
+    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+}
+.sidebar-search {
+    padding: 15px;
+}
+.sidebar-search input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    box-sizing: border-box;
+}
+.platform-list {
+    list-style: none;
+    padding: 0 10px;
+    margin: 0;
+    overflow-y: auto;
+    flex: 1;
+}
+.platform-list li {
+    padding: 10px 12px;
+    margin-bottom: 5px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #475569;
+    font-weight: 500;
+    transition: background 0.2s;
+}
+.platform-list li:hover {
+    background: #e2e8f0;
+}
+.platform-list li.active {
+    background: white;
+    color: #0f172a;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    border: 1px solid #e2e8f0;
+}
+.p-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+    color: white;
+}
+.p-icon.ch-zalo { background: #0068ff; }
+.p-icon.ch-messenger { background: #0084ff; }
+.p-icon.ch-shopee { background: #ee4d2d; }
+.p-icon.ch-tiktok { background: #000000; }
+.p-icon.ch-zalopersonal { background: #0099ff; }
+.p-icon.ch-instagram { background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%); }
+.p-icon.ch-threads { background: #000000; }
+.p-icon.ch-googlelocation { background: #4285F4; }
+
+.modal-content {
+    flex: 1;
+    padding: 20px 30px;
+    overflow-y: auto;
+}
+.platform-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+.platform-header h3 {
+    margin: 0;
+    font-size: 20px;
+}
+
+/* Reusing some existing styles */
+::deep .fields {
+    background: #f8fafc;
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+}
+::deep .fields label {
+    display: block;
+    margin-bottom: 10px;
+    font-weight: 500;
+}
+::deep .fields input {
+    width: 100%;
+    padding: 8px;
+    margin-top: 5px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+::deep .urls {
+    background: #f1f5f9;
+    padding: 10px 15px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-bottom: 15px;
+    color: #475569;
+}
+::deep .urls code {
+    background: #e2e8f0;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #0f172a;
+}
+::deep .actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+::deep .guide {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    padding: 10px 15px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+}
+::deep .guide summary {
+    font-weight: 600;
+    cursor: pointer;
+    color: #92400e;
+}
+::deep .guide ol {
+    margin-top: 10px;
+    padding-left: 20px;
+    color: #b45309;
+    font-size: 14px;
+}
