@@ -1,7 +1,7 @@
 class ConversationModel {
   final int id;
   final int channel;
-  final string channelName;
+  final String channelName;
   final String externalId;
   final String customerName;
   final String customerPhone;
