@@ -13,6 +13,8 @@ public class InboxService(
     IEnumerable<IChannelAdapter> adapters,
     InboxEvents events,
     PushNotificationService pushNotificationService,
+    ChannelSettingsStore settings,
+    AiSuggestionService aiService,
     ILogger<InboxService> logger)
 {
     // Trả về Id hội thoại nếu đã lưu tin mới; null nếu là webhook trùng (bỏ qua).
@@ -88,7 +90,105 @@ public class InboxService(
         if (isNew && !simulated)
             _ = FetchAndSaveProfileAsync(channel, conversation.Id, inbound.ExternalConversationId);
 
+        // Kích hoạt AI tự động trả lời nếu được bật và hội thoại chưa gán cho nhân viên
+        if (settings.Ai.IsAutoReplyEnabled && conversation.AssignedStaffId == null && !string.IsNullOrWhiteSpace(inbound.Text))
+            _ = TriggerAutoPilotAsync(conversation.Id);
+
         return conversation.Id;
+    }
+
+    private async Task TriggerAutoPilotAsync(int conversationId)
+    {
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var conversation = await db.Conversations.Include(c => c.Messages).FirstOrDefaultAsync(c => c.Id == conversationId);
+            if (conversation is null || conversation.AssignedStaffId != null) return;
+
+            // Lấy 15 tin nhắn gần nhất
+            var messages = conversation.Messages.OrderBy(m => m.SentAt).TakeLast(15).ToList();
+            var lastInboundText = messages.LastOrDefault(m => m.Direction == MessageDirection.Inbound)?.Text?.ToLowerInvariant() ?? "";
+            
+            // Nếu khách hỏi về bánh gato -> dừng AI tự động trả lời để nhân viên vào tư vấn trực tiếp
+            if (lastInboundText.Contains("gato"))
+            {
+                logger.LogInformation("Tin nhắn chứa 'gato' — dừng AI tự động để nhân viên tư vấn.");
+                return;
+            }
+            
+            // Lấy AI reply
+            var reply = await aiService.SuggestReplyAsync(conversation, messages, isAutoPilot: true);
+            
+            // Xử lý chốt đơn nếu có [ORDER_READY]
+            if (reply.Contains("[ORDER_READY]"))
+            {
+                var idx = reply.IndexOf("[ORDER_READY]");
+                var jsonStr = reply[(idx + 13)..].Trim();
+                try
+                {
+                    var orderData = System.Text.Json.JsonDocument.Parse(jsonStr).RootElement;
+                    var pickupTime = orderData.TryGetProperty("pickupTime", out var pt) ? pt.GetString() : "";
+                    var userNote = orderData.TryGetProperty("note", out var un) ? un.GetString() : "";
+                    var fullNote = "Đơn chốt tự động bởi AI";
+                    if (!string.IsNullOrEmpty(pickupTime)) fullNote += $" | Giờ lấy: {pickupTime}";
+                    if (!string.IsNullOrEmpty(userNote)) fullNote += $" | Ghi chú: {userNote}";
+
+                    var custName = orderData.TryGetProperty("customerName", out var cn) ? cn.GetString() : "";
+                    if (string.IsNullOrWhiteSpace(custName) || custName == "Tên")
+                    {
+                        custName = conversation.CustomerName;
+                    }
+
+                    var order = new Order
+                    {
+                        Title = custName,
+                        CustomerPhone = orderData.TryGetProperty("phone", out var p) ? p.GetString() : "",
+                        CustomerAddress = orderData.TryGetProperty("address", out var a) ? a.GetString() : "",
+                        Note = fullNote,
+                        Amount = orderData.TryGetProperty("totalPrice", out var t) && t.TryGetDecimal(out var amt) ? (long)amt : 0,
+                        ConversationId = conversationId,
+                        CreatedAt = DateTime.UtcNow
+                    };
+
+                    if (orderData.TryGetProperty("items", out var items) && items.ValueKind == System.Text.Json.JsonValueKind.Array)
+                    {
+                        foreach (var item in items.EnumerateArray())
+                        {
+                            order.Items.Add(new OrderItem
+                            {
+                                ProductName = item.TryGetProperty("name", out var n) ? n.GetString() ?? "Sản phẩm" : "Sản phẩm",
+                                Quantity = item.TryGetProperty("quantity", out var q) && q.TryGetInt32(out var qty) ? qty : 1,
+                                UnitPrice = item.TryGetProperty("unitPrice", out var u) && u.TryGetDecimal(out var up) ? (long)up : 0
+                            });
+                        }
+                    }
+
+                    db.Orders.Add(order);
+                    
+                    // Gắn tag hội thoại
+                    if (string.IsNullOrEmpty(conversation.Tag) || !conversation.Tag.Contains("Chốt đơn"))
+                        conversation.Tag = string.IsNullOrEmpty(conversation.Tag) ? "Chốt đơn" : conversation.Tag + ", Chốt đơn";
+                        
+                    await db.SaveChangesAsync();
+                    events.NotifyChanged();
+                    logger.LogInformation("AI AutoPilot đã chốt đơn thành công cho hội thoại {Id}", conversationId);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Lỗi khi parse JSON chốt đơn của AI");
+                }
+            }
+
+            // Gửi tin nhắn trả lời
+            if (!string.IsNullOrWhiteSpace(reply))
+            {
+                await SendReplyAsync(conversationId, reply);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Lỗi trong luồng AI AutoPilot cho hội thoại {Id}", conversationId);
+        }
     }
 
     // Bổ sung avatar cho hội thoại cũ (tạo trước khi có tính năng, hoặc lần trước lấy hụt)
@@ -205,7 +305,7 @@ public class InboxService(
         events.NotifyChanged();
     }
 
-    public async Task UpdateOrderAhamoveAsync(int orderId, string ahamoveOrderId, string trackingLink)
+    public async Task UpdateOrderAhamoveAsync(int orderId, string? ahamoveOrderId, string? trackingLink)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var order = await db.Orders.FindAsync(orderId);
@@ -213,6 +313,7 @@ public class InboxService(
         {
             order.AhamoveOrderId = ahamoveOrderId;
             order.AhamoveTrackingLink = trackingLink;
+            order.AhamoveStatus = string.IsNullOrEmpty(ahamoveOrderId) ? null : "ASSIGNING_DRIVER";
             await db.SaveChangesAsync();
             events.NotifyChanged();
         }
@@ -240,6 +341,73 @@ public class InboxService(
         await db.SaveChangesAsync();
         events.NotifyChanged();
         return order;
+    }
+
+    // ===== Tìm kiếm khách hàng (autocomplete) =====
+    public class CustomerInfo
+    {
+        public string Name { get; set; } = "";
+        public string Phone { get; set; } = "";
+        public string Address { get; set; } = "";
+    }
+
+    public async Task<List<CustomerInfo>> SearchCustomersAsync(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query) || query.Length < 3) return [];
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        
+        var matchingConvs = await db.Conversations.AsNoTracking()
+            .Where(c => c.CustomerName.Contains(query))
+            .Select(c => c.Id)
+            .ToListAsync();
+
+        var orders = await db.Orders.AsNoTracking()
+            .Where(o => o.CustomerPhone.Contains(query) || matchingConvs.Contains(o.ConversationId))
+            .OrderByDescending(o => o.CreatedAt)
+            .ToListAsync();
+            
+        var conversationIds = orders.Select(o => o.ConversationId).Distinct().ToList();
+        var convs = await db.Conversations.AsNoTracking()
+            .Where(c => conversationIds.Contains(c.Id))
+            .ToDictionaryAsync(c => c.Id, c => c.CustomerName);
+
+        var result = new List<CustomerInfo>();
+        var seenPhones = new HashSet<string>();
+
+        foreach (var o in orders)
+        {
+            if (string.IsNullOrWhiteSpace(o.CustomerPhone)) continue;
+            var phoneClean = o.CustomerPhone.Trim();
+            if (seenPhones.Contains(phoneClean)) continue;
+
+            seenPhones.Add(phoneClean);
+            convs.TryGetValue(o.ConversationId, out var name);
+            result.Add(new CustomerInfo
+            {
+                Name = name ?? "Khách hàng",
+                Phone = phoneClean,
+                Address = o.CustomerAddress
+            });
+
+            if (result.Count >= 10) break;
+        }
+
+        return result;
+    }
+
+    public async Task UpdateCustomerInfoAsync(int conversationId, string name, string phone, string address)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var conv = await db.Conversations.FindAsync(conversationId);
+        if (conv is not null)
+        {
+            conv.CustomerName = name;
+            conv.CustomerPhone = phone;
+            conv.CustomerAddress = address;
+            await db.SaveChangesAsync();
+            events.NotifyChanged();
+        }
     }
 
     // ===== Quản lý sản phẩm =====

@@ -16,52 +16,89 @@
 @inject IJSRuntime JS
 @inject PushNotificationService PushSvc
 @inject ChannelSettingsStore Store
-@inject AhaMoveService AhaMoveSvc
+@inject LalamoveService LalamoveSvc
 @implements IDisposable
 
 <PageTitle>ChumChat — Hộp thư hợp nhất</PageTitle>
 
-<div class="inbox @(selected is not null ? "has-selection" : "") @(mobileShowCustomerPanel ? "show-info-drawer" : "")">
-    <aside class="conversation-list">
-        <div class="list-header">
-            <h1>ChumChat</h1>
-            <span class="header-links">
-                <a class="simulator-link" href="/simulator" title="Giả lập tin nhắn để test">🧪 Giả lập</a>
-                @if (isAdmin)
-                {
-                    <a class="simulator-link" href="/tro-ly-ai" title="Cấu hình trợ lý AI">✨ Trợ lý AI</a>
-                    <a class="simulator-link" href="/settings" title="Cấu hình kết nối các kênh">⚙ Cấu hình</a>
-                }
+<div class="app-layout-wrapper" style="display: flex; flex-direction: column; height: 100vh; overflow: hidden;">
+    <!-- ===== TOP NAVIGATION HEADER BAR ===== -->
+    <header class="main-top-navbar" style="background: #ffffff; border-bottom: 1px solid #e5e7eb; padding: 0 16px; height: 52px; min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.03); z-index: 100; flex-shrink: 0;">
+        <!-- Logo & Status -->
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <h1 style="margin: 0; font-size: 1.25rem; font-weight: 800; background: linear-gradient(135deg, #2563eb, #7c3aed); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">ChumChat</h1>
+            <span style="font-size: 11px; background: #ecfdf5; color: #047857; font-weight: 600; padding: 2px 8px; border-radius: 12px; border: 1px solid #a7f3d0; display: inline-flex; align-items: center; gap: 4px;">
+                <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981; display: inline-block;"></span> Trực tuyến
             </span>
         </div>
 
-        <div class="me-bar">
-            <span class="me-name">👤 @currentStaffName</span>
-            <span class="me-links">
-                <button class="push-toggle-btn" @onclick="TogglePushSubscription" title="@(pushSubscribed ? "Tắt thông báo đẩy trên thiết bị này" : "Bật thông báo đẩy trên thiết bị này")">
-                    @(pushSubscribed ? "🔔" : "🔕")
-                </button>
-                <a href="/doi-mat-khau" title="Đổi mật khẩu">🔑</a>
-                <a class="logout-link" href="/account/logout" title="Đăng xuất">Đăng xuất</a>
-            </span>
-        </div>
-        @if (!string.IsNullOrEmpty(pushError))
-        {
-            <div class="push-error-bar" title="@pushError">✕ Lỗi thông báo (di chuột xem)</div>
-        }
-
-        <div class="channel-filters">
-            <button class="@(mineOnly ? "filter" : "filter active")" @onclick="() => SetMineOnly(false)">Tất cả</button>
-            <button class="@(mineOnly ? "filter active" : "filter")" @onclick="() => SetMineOnly(true)">Của tôi</button>
-        </div>
-        <div class="channel-filters">
-            <button class="@FilterClass(null)" @onclick="() => SetFilter(null)">Mọi kênh</button>
-            @foreach (var channel in Enum.GetValues<ChannelType>())
+        <!-- Main Navigation Tabs -->
+        <nav style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <a href="/" class="top-nav-btn active" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #eff6ff; color: #1d4ed8; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #bfdbfe; transition: all 0.15s ease;">
+                <span>💬</span> <span>Hộp Thư</span>
+            </a>
+            <a href="/thuc-don" class="top-nav-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #f9fafb; color: #374151; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #e5e7eb; transition: all 0.15s ease;">
+                <span>🍔</span> <span>Thực Đơn iPOS</span>
+            </a>
+            @if (isAdmin)
             {
-                <button class="@FilterClass(channel)" @onclick="() => SetFilter(channel)">
-                    @ChannelLabel(channel)
-                </button>
+                <a href="/tro-ly-ai" class="top-nav-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #f9fafb; color: #374151; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #e5e7eb; transition: all 0.15s ease;">
+                    <span>✨</span> <span>Trợ Lý AI</span>
+                </a>
+                <a href="/simulator" class="top-nav-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #f9fafb; color: #374151; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #e5e7eb; transition: all 0.15s ease;">
+                    <span>🧪</span> <span>Giả Lập Chat</span>
+                </a>
+                <a href="/settings" class="top-nav-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #f9fafb; color: #374151; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #e5e7eb; transition: all 0.15s ease;">
+                    <span>⚙️</span> <span>Cấu Hình</span>
+                </a>
             }
+        </nav>
+
+        <!-- User Profile & Tool Actions -->
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 12px; font-weight: 600; color: #374151; background: #f3f4f6; padding: 4px 10px; border-radius: 12px; border: 1px solid #e5e7eb;" title="Tài khoản đang đăng nhập">
+                👤 @currentStaffName
+            </span>
+            <button type="button" @onclick="TogglePushSubscription" title="@(pushSubscribed ? "Tắt thông báo đẩy" : "Bật thông báo đẩy")" style="display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 10px; border-radius: 6px; background: #f3f4f6; border: 1px solid #e5e7eb; cursor: pointer; font-size: 12px; font-weight: 600; color: #374151; transition: all 0.15s ease;">
+                @(pushSubscribed ? "🔔 TB Bật" : "🔕 TB Tắt")
+            </button>
+            <a href="/doi-mat-khau" title="Đổi mật khẩu" style="display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 10px; border-radius: 6px; background: #f3f4f6; color: #374151; text-decoration: none; font-size: 12px; font-weight: 600; border: 1px solid #e5e7eb;">🔑 Đổi MK</a>
+            <a href="/account/logout" title="Đăng xuất" style="display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 12px; border-radius: 6px; background: #fef2f2; color: #dc2626; text-decoration: none; font-size: 12px; font-weight: 700; border: 1px solid #fecaca;">🚪 Đăng xuất</a>
+        </div>
+    </header>
+
+    <div class="inbox @(selected is not null ? "has-selection" : "") @(mobileShowCustomerPanel ? "show-info-drawer" : "")" style="flex: 1; height: calc(100vh - 52px); overflow: hidden;">
+        <aside class="conversation-list">
+            <div class="sidebar-header-redesigned" style="padding: 10px 12px; border-bottom: 1px solid #e5e7eb; background: #ffffff; display: flex; flex-direction: column; gap: 8px;">
+                <!-- Dòng 1: Tiêu đề & Chọn Phạm vi (Tất cả / Của tôi) -->
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px;">
+                    <span style="font-size: 13px; font-weight: 700; color: #111827;">💬 Danh sách Hội thoại</span>
+
+                    <div style="display: inline-flex; background: #f3f4f6; padding: 2px; border-radius: 8px;">
+                        <button type="button" @onclick="() => SetMineOnly(false)" style="border: none; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; @(!mineOnly ? "background: white; color: #2563eb; box-shadow: 0 1px 2px rgba(0,0,0,0.08);" : "background: transparent; color: #6b7280;")">
+                            Tất cả
+                        </button>
+                        <button type="button" @onclick="() => SetMineOnly(true)" style="border: none; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; @(mineOnly ? "background: white; color: #2563eb; box-shadow: 0 1px 2px rgba(0,0,0,0.08);" : "background: transparent; color: #6b7280;")">
+                            Của tôi
+                        </button>
+                    </div>
+                </div>
+
+            @if (!string.IsNullOrEmpty(pushError))
+            {
+                <div class="push-error-bar" title="@pushError" style="font-size: 10px; color: #ef4444;">✕ Lỗi thông báo (di chuột xem)</div>
+            }
+
+            <!-- Dòng 3: Chọn Kênh (Dropdown gọn gàng) -->
+            <div style="position: relative; width: 100%;">
+                <select value="@(filter?.ToString() ?? "")" @onchange="OnChannelSelectChanged" style="width: 100%; padding: 6px 10px; border-radius: 8px; border: 1px solid #d1d5db; background: white; font-size: 12px; color: #374151; font-weight: 500; cursor: pointer; outline: none;">
+                    <option value="">🌐 Tất cả các kênh</option>
+                    @foreach (var ch in Enum.GetValues<ChannelType>())
+                    {
+                        <option value="@ch">@ChannelLabel(ch)</option>
+                    }
+                </select>
+            </div>
         </div>
 
         @if (conversations.Count == 0)
@@ -265,6 +302,8 @@
             <div class="panel-tabs">
                 <button class="panel-tab @(activeTab == "info" ? "active" : "")"
                         @onclick='() => activeTab = "info"'>Thông tin</button>
+                <button class="panel-tab @(activeTab == "customer" ? "active" : "")"
+                        @onclick='() => activeTab = "customer"'>Khách hàng</button>
                 <button class="panel-tab tab-order @(activeTab == "order" ? "active" : "")"
                         @onclick='() => activeTab = "order"'>Tạo đơn</button>
             </div>
@@ -304,6 +343,33 @@
                     </div>
                 </div>
 
+            }
+            else if (activeTab == "customer")
+            {
+                <div class="panel-section">
+                    <h3>👤 Hồ sơ khách hàng</h3>
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                        <label class="modal-label" style="display:block; margin-bottom:10px; font-weight:bold; font-size:12px; color:#555; text-align: left;">Họ và tên
+                            <input @bind="custName" style="width:100%; padding:6px; border:1px solid #cbd5e1; border-radius:4px; margin-top:4px; font-size: 13px;" />
+                        </label>
+                        <label class="modal-label" style="display:block; margin-bottom:10px; font-weight:bold; font-size:12px; color:#555; text-align: left;">Số điện thoại
+                            <input @bind="custPhone" style="width:100%; padding:6px; border:1px solid #cbd5e1; border-radius:4px; margin-top:4px; font-size: 13px;" />
+                        </label>
+                        <label class="modal-label" style="display:block; margin-bottom:12px; font-weight:bold; font-size:12px; color:#555; text-align: left;">Địa chỉ giao hàng
+                            <textarea @bind="custAddress" rows="2" placeholder="Nhập địa chỉ nhận hàng của khách..." style="width:100%; padding:6px; border:1px solid #cbd5e1; border-radius:4px; margin-top:4px; font-family:inherit; font-size:13px;"></textarea>
+                        </label>
+                        
+                        @if (!string.IsNullOrEmpty(custSaveMessage))
+                        {
+                            <p style="color:#10b981; font-size:12px; margin: 5px 0 8px 0; font-weight:bold; text-align:left;">@custSaveMessage</p>
+                        }
+
+                        <button @onclick="SaveCustomerProfile" style="width:100%; padding:8px; background:#f43f5e; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size: 13px;">
+                            💾 Lưu thông tin khách hàng
+                        </button>
+                    </div>
+                </div>
+
                 <div class="panel-section orders-section">
                     <h3>Lịch sử đặt hàng <span class="order-count">@orders.Count</span></h3>
                     @if (orders.Count == 0)
@@ -312,50 +378,93 @@
                     }
                     else
                     {
-                        <div class="order-list">
+                        <div class="order-list" style="display: flex; flex-direction: column; gap: 12px; margin-top: 10px;">
                             @foreach (var order in orders)
                             {
-                                <div class="order-item">
-                                    <div class="order-top">
-                                        <span class="order-title">@order.Title</span>
+                                <div class="order-item" style="border-left: 4px solid @GetLalamoveStatusColor(order.AhamoveStatus); background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border-radius: 8px; padding: 12px; transition: all 0.2s ease; display: flex; flex-direction: column; gap: 8px;">
+                                    
+                                    <!-- Tiêu đề (Tên khách hàng) & Tổng tiền -->
+                                    <div class="order-top" style="display: flex; justify-content: space-between; align-items: center;">
+                                        @{
+                                            var displayName = !string.IsNullOrWhiteSpace(order.Title) && !order.Title.StartsWith("Đơn hàng") 
+                                                ? order.Title 
+                                                : (selected?.CustomerName ?? "Khách hàng");
+                                        }
+                                        <div style="display: flex; align-items: center; gap: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                            <span style="font-size: 13px;">👤</span>
+                                            <span class="order-title" style="font-weight: 700; font-size: 13px; color: #111827;">@displayName</span>
+                                        </div>
                                         @if (order.Amount > 0)
                                         {
-                                            <span class="order-amount">@order.Amount.ToString("N0")đ</span>
+                                            <span class="order-amount" style="color: #10b981; font-weight: 700; font-size: 14px; white-space: nowrap; margin-left: 8px;">@order.Amount.ToString("N0")đ</span>
                                         }
                                     </div>
-                                    <div class="order-meta">
-                                        @order.CreatedAt.ToLocalTime().ToString("HH:mm dd/MM/yyyy")
-                                        @if (order.TrelloCardUrl is not null)
-                                        {
-                                            <a href="@order.TrelloCardUrl" target="_blank">Trello ↗</a>
-                                        }
-                                        @if (!string.IsNullOrEmpty(order.AhamoveTrackingLink))
-                                        {
-                                            <a href="@order.AhamoveTrackingLink" target="_blank" class="ahamove-link">🏍 Theo dõi AhaMove ↗</a>
-                                        }
-                                        else if (!string.IsNullOrEmpty(order.AhamoveOrderId))
-                                        {
-                                            <span class="ahamove-status">🏍 Đã đặt xe (@order.AhamoveOrderId)</span>
-                                        }
-                                    </div>
-                                    @if (string.IsNullOrEmpty(order.AhamoveOrderId) && Store.AhaMove.Token != "")
-                                    {
-                                        <button class="btn-ahamove" @onclick="() => OpenAhaMoveModal(order)" style="background: #ea5800; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; margin-bottom: 5px;">
-                                            🏍 Đặt giao hàng AhaMove
-                                        </button>
-                                    }
+
+                                    <!-- Danh sách sản phẩm -->
                                     @if (order.Items.Count > 0)
                                     {
-                                        <div class="order-items-summary">
+                                        <div class="order-items-summary" style="display: flex; flex-wrap: wrap; gap: 6px;">
                                             @foreach (var oi in order.Items)
                                             {
-                                                <span class="order-item-line">@oi.ProductName ×@oi.Quantity</span>
+                                                <span class="order-item-line" style="font-size: 11px; background: #eff6ff; color: #1e40af; border: 1px solid #dbeafe; border-radius: 4px; padding: 2px 6px;">@oi.ProductName ×@oi.Quantity</span>
                                             }
                                         </div>
                                     }
+
+                                    <!-- Trạng thái vận chuyển Lalamove -->
+                                    @if (!string.IsNullOrEmpty(order.AhamoveOrderId))
+                                    {
+                                        var isLala = order.AhamoveOrderId.StartsWith("Lala");
+                                        var statusColor = GetLalamoveStatusColor(order.AhamoveStatus);
+                                        var statusText = GetLalamoveStatusText(order.AhamoveStatus);
+                                        
+                                        <div style="display: flex; align-items: center; justify-content: space-between; background: #f9fafb; border: 1px solid #f3f4f6; border-radius: 6px; padding: 6px 10px;">
+                                            <div style="display: flex; align-items: center; gap: 6px;">
+                                                <span style="font-size: 14px;">📦</span>
+                                                <div style="display: flex; flex-direction: column;">
+                                                    <span style="font-size: 11px; font-weight: 600; color: @statusColor;">@statusText</span>
+                                                    <span style="font-size: 9px; color: #9ca3af;">Mã đơn: @(order.AhamoveOrderId.StartsWith("Lala:") ? order.AhamoveOrderId[5..] : order.AhamoveOrderId)</span>
+                                                </div>
+                                            </div>
+                                            @if (!string.IsNullOrEmpty(order.AhamoveTrackingLink))
+                                            {
+                                                <a href="@order.AhamoveTrackingLink" target="_blank" style="background: @statusColor; color: white; border-radius: 4px; padding: 3px 8px; font-size: 10px; text-decoration: none; font-weight: bold; display: inline-flex; align-items: center; gap: 2px;">
+                                                    Theo dõi ↗
+                                                </a>
+                                            }
+                                        </div>
+                                    }
+
+                                    <!-- Dòng dưới: Thời gian & Nút Hành động -->
+                                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #6b7280; border-top: 1px solid #f3f4f6; padding-top: 8px; margin-top: 4px;">
+                                        <span>⏱ @order.CreatedAt.ToLocalTime().ToString("HH:mm dd/MM")</span>
+                                        
+                                        <div style="display: flex; gap: 8px; align-items: center;">
+                                            @if (order.TrelloCardUrl is not null)
+                                            {
+                                                <a href="@order.TrelloCardUrl" target="_blank" style="color: #2563eb; text-decoration: none; font-weight: 500;">Trello ↗</a>
+                                            }
+                                            
+                                            @if (string.IsNullOrEmpty(order.AhamoveOrderId) && !string.IsNullOrEmpty(Store.Lalamove.ApiKey))
+                                            {
+                                                <button class="btn-ahamove" @onclick="() => OpenAhaMoveModal(order)" style="background: #f43f5e; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 10px; cursor: pointer; font-weight: bold; transition: background 0.2s;">
+                                                    📦 Đặt Lalamove
+                                                </button>
+                                            }
+                                            else if (!string.IsNullOrEmpty(order.AhamoveOrderId))
+                                            {
+                                                <button @onclick="@(() => CancelLalamoveOrder(order))" disabled="@cancellingLalamove" style="background: #ef4444; color: white; border: none; border-radius: 4px; padding: 4px 8px; font-size: 10px; cursor: pointer; font-weight: bold; transition: background 0.2s;">
+                                                    @(cancellingLalamove ? "Đang hủy..." : "✕ Hủy Lalamove")
+                                                </button>
+                                            }
+                                        </div>
+                                    </div>
+
                                     @if (!string.IsNullOrEmpty(order.Note))
                                     {
-                                        <div class="order-note">@order.Note</div>
+                                        <div class="order-note" style="font-size: 11px; color: #6b7280; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 4px; padding: 6px; margin-top: 2px; font-style: italic;">
+                                            📝 Ghi chú: @order.Note
+                                        </div>
                                     }
                                 </div>
                             }
@@ -375,7 +484,20 @@
                                     <span class="customer-tag">@selected.CustomerName</span>
                                     <span class="channel-badge sm @ChannelCss(selected.Channel)">@ChannelLabel(selected.Channel)</span>
                                 </div>
-                                <input @bind="orderPhone" placeholder="Số điện thoại" class="form-input" />
+                                <div style="position: relative;">
+                                    <input value="@orderPhone" @oninput="OnOrderPhoneInput" placeholder="Số điện thoại" class="form-input" />
+                                    @if (customerSuggestions.Count > 0 && activeSuggestionField == "order")
+                                    {
+                                        <ul class="suggestions-list" style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 4px; z-index: 10000; list-style: none; padding: 0; margin: 0; max-height: 180px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.15); text-align: left;">
+                                            @foreach (var sug in customerSuggestions)
+                                            {
+                                                <li @onclick="@(() => SelectCustomerSuggestion(sug, "order"))" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 13px; color: #333;" onmouseover="this.style.backgroundColor='#f0f9ff'" onmouseout="this.style.backgroundColor='white'">
+                                                    📱 <b>@sug.Phone</b> - @sug.Name (@sug.Address)
+                                                </li>
+                                            }
+                                        </ul>
+                                    }
+                                </div>
                                 <input @bind="orderAddress" placeholder="Địa chỉ giao hàng" class="form-input" />
                             </div>
                         </div>
@@ -473,8 +595,20 @@
                                     <span>Tổng giá trị đơn hàng</span>
                                     <span class="summary-value">@ItemsTotal.ToString("N0") đ</span>
                                 </div>
-                                <div class="summary-row">
-                                    <span>Phí vận chuyển</span>
+                                <div class="summary-row" style="align-items: center;">
+                                    <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">
+                                        <span>Phí vận chuyển</span>
+                                        @if (!string.IsNullOrEmpty(orderAddress) && !string.IsNullOrEmpty(Store.Lalamove.ApiKey))
+                                        {
+                                            <button type="button" @onclick="EstimateOrderFormShippingFee" disabled="@estimatingOrderFormShipping" style="background:#f43f5e; color:white; border:none; padding:3px 6px; border-radius:4px; font-size:10px; cursor:pointer; font-weight:bold;">
+                                                @(estimatingOrderFormShipping ? "🔄 Đang tính..." : "⚡ Tính phí Lalamove")
+                                            </button>
+                                        }
+                                        @if (!string.IsNullOrEmpty(orderFormShippingError))
+                                        {
+                                            <span style="color:#ef4444; font-size:9px; display:block; text-align:left; max-width: 140px; word-break: break-word;">✕ @orderFormShippingError</span>
+                                        }
+                                    </div>
                                     <div class="summary-input-wrap">
                                         <input type="number" @bind="orderShipping" class="summary-input" />
                                         <span>đ</span>
@@ -519,6 +653,7 @@
         </aside>
     }
 </div>
+</div>
 
 @* ===== Popup xem trước thẻ Trello ===== *@
 @if (showTrelloModal && selected is not null)
@@ -551,24 +686,94 @@
 {
     <div class="modal-overlay" @onclick="CloseAhaMoveModal">
         <div class="modal" @onclick:stopPropagation="true">
-            <h3 style="margin-top:0; color:#ea5800;">🏍 Xác nhận gọi AhaMove</h3>
+            <h3 style="margin-top:0; color:#f43f5e;">📦 Đặt xe giao hàng Lalamove</h3>
+
             <label class="modal-label">Tên khách nhận
                 <input @bind="ahaMoveReceiverName" />
             </label>
-            <label class="modal-label">SĐT nhận
-                <input @bind="ahaMoveReceiverMobile" />
+            <label class="modal-label" style="position: relative;">SĐT nhận
+                <input value="@ahaMoveReceiverMobile" @oninput="OnLalamovePhoneInput" placeholder="Nhập SĐT để tìm gợi ý..." />
+                @if (customerSuggestions.Count > 0 && activeSuggestionField == "lalamove")
+                {
+                    <ul class="suggestions-list" style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 4px; z-index: 10000; list-style: none; padding: 0; margin: 0; max-height: 180px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.15); text-align: left;">
+                        @foreach (var sug in customerSuggestions)
+                        {
+                            <li @onclick="@(() => SelectCustomerSuggestion(sug, "lalamove"))" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 13px; color: #333;" onmouseover="this.style.backgroundColor='#f0f9ff'" onmouseout="this.style.backgroundColor='white'">
+                                📱 <b>@sug.Phone</b> - @sug.Name (@sug.Address)
+                            </li>
+                        }
+                    </ul>
+                }
             </label>
-            <label class="modal-label">Địa chỉ nhận
-                <textarea @bind="ahaMoveReceiverAddress" rows="2"></textarea>
-            </label>
-            <label class="modal-label">Thu hộ (COD) đ
-                <input type="number" @bind="ahaMoveCod" />
-            </label>
+            <div style="display:flex; justify-content: space-between; align-items:center; margin-top: 15px; margin-bottom:5px;">
+                <span style="font-weight:bold; font-size:13px; color:#555;">Địa chỉ nhận</span>
+                <label style="font-size:12px; cursor:pointer; color:#f43f5e; display:flex; align-items:center; gap:4px; font-weight: bold; margin: 0;">
+                    <input type="checkbox" @bind="useStructuredAddress" /> Chọn theo Tỉnh/Quận/Phường
+                </label>
+            </div>
+
+            @if (useStructuredAddress)
+            {
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom:10px; text-align: left;">
+                    <label class="modal-label" style="margin:0;">Tỉnh / Thành phố
+                        <select value="@selectedProvinceCode" @onchange="OnProvinceChanged" style="width:100%; padding:6px; border:1px solid #ddd; border-radius:4px; font-size: 13px;">
+                            <option value="0">-- Chọn Tỉnh/TP --</option>
+                            @foreach (var p in provinces)
+                            {
+                                <option value="@p.Code">@p.Name</option>
+                            }
+                        </select>
+                    </label>
+                    <label class="modal-label" style="margin:0;">Quận / Huyện
+                        <select value="@selectedDistrictCode" @onchange="OnDistrictChanged" style="width:100%; padding:6px; border:1px solid #ddd; border-radius:4px; font-size: 13px;" disabled="@(districts.Count == 0)">
+                            <option value="0">-- Chọn Quận/Huyện --</option>
+                            @foreach (var d in districts)
+                            {
+                                <option value="@d.Code">@d.Name</option>
+                            }
+                        </select>
+                    </label>
+                </div>
+                <div style="display:grid; grid-template-columns: 1fr; gap:10px; margin-bottom:10px; text-align: left;">
+                    <label class="modal-label" style="margin:0;">Phường / Xã
+                        <select value="@selectedWardCode" @onchange="OnWardChanged" style="width:100%; padding:6px; border:1px solid #ddd; border-radius:4px; font-size: 13px;" disabled="@(wards.Count == 0)">
+                            <option value="0">-- Chọn Phường/Xã --</option>
+                            @foreach (var w in wards)
+                            {
+                                <option value="@w.Code">@w.Name</option>
+                            }
+                        </select>
+                    </label>
+                </div>
+                <label class="modal-label" style="text-align: left;">Số nhà, tên đường
+                    <input value="@streetAddress" @oninput="OnStreetInput" placeholder="VD: số 10 ngõ 5..." style="width:100%; padding:6px; border:1px solid #ddd; border-radius:4px;" />
+                </label>
+                <div style="font-size: 12px; color: #666; margin-top: 5px; text-align: left; background: #f8fafc; padding: 6px 10px; border-radius: 4px; border: 1px dashed #cbd5e1;">
+                    📍 Địa chỉ hoàn chỉnh: <b>@(string.IsNullOrEmpty(ahaMoveReceiverAddress) ? "(chưa điền)" : ahaMoveReceiverAddress)</b>
+                </div>
+            }
+            else
+            {
+                <label class="modal-label" style="position: relative; text-align: left;">Tìm kiếm địa chỉ nhanh (Google Maps style)
+                    <textarea value="@ahaMoveReceiverAddress" @oninput="OnAddressInput" rows="2" placeholder="Nhập địa chỉ hoặc dán link Google Maps để tìm gợi ý..."></textarea>
+                    @if (addressSuggestions.Count > 0)
+                    {
+                        <ul class="suggestions-list" style="position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #ddd; border-radius: 4px; z-index: 10000; list-style: none; padding: 0; margin: 0; max-height: 180px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.15); text-align: left;">
+                            @foreach (var sug in addressSuggestions)
+                            {
+                                <li @onclick="() => SelectAddressSuggestion(sug)" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee; font-size: 13px; color: #333;" onmouseover="this.style.backgroundColor='#f0f9ff'" onmouseout="this.style.backgroundColor='white'">
+                                    📍 @sug.DisplayName
+                                </li>
+                            }
+                        </ul>
+                    }
+                </label>
+            }
             @if (ahaMoveEstimatedFee is not null)
             {
-                <div style="margin-top: 10px; padding: 10px; background: #fff3ed; border-radius: 6px; text-align: center;">
-                    <span style="color: #666;">Phí giao hàng dự kiến:</span><br/>
-                    <strong style="color: #ea5800; font-size: 1.4em;">@ahaMoveEstimatedFee?.ToString("N0") đ</strong>
+                <div style="margin-top: 10px; padding: 10px; background: #fff1f2; border-radius: 6px; text-align: center;">
+                    <span style="color: #666;">Phí giao hàng Lalamove dự kiến:</span><br/>
+                    <strong style="color: #f43f5e; font-size: 1.4em;">@ahaMoveEstimatedFee?.ToString("N0") đ</strong>
                 </div>
             }
             @if (ahaMoveModalError is not null)
@@ -588,7 +793,7 @@
                 else
                 {
                     <button class="modal-create" @onclick="ConfirmCreateAhaMoveOrder"
-                            disabled="@creatingAhaMove" style="background: #ea5800; border-color: #ea5800;">
+                            disabled="@creatingAhaMove" style="background: #f43f5e; border-color: #f43f5e;">
                         @(creatingAhaMove ? "Đang đặt..." : "Xác nhận đặt xe")
                     </button>
                 }
@@ -632,11 +837,34 @@
     private string ahaMoveReceiverName = "";
     private string ahaMoveReceiverMobile = "";
     private string ahaMoveReceiverAddress = "";
-    private long ahaMoveCod = 0;
+    private List<AddressSuggestion> addressSuggestions = new();
+    private double? suggestedLat;
+    private double? suggestedLng;
+    private System.Threading.CancellationTokenSource? addressCts;
+    
+    // Gợi ý khách hàng từ đơn cũ
+    private List<InboxService.CustomerInfo> customerSuggestions = new();
+    private string activeSuggestionField = "";
+    
+    // Các biến cấu hình Tỉnh/Quận/Phường
+    private bool useStructuredAddress = false;
+    private List<Province> provinces = [];
+    private List<District> districts = [];
+    private List<Ward> wards = [];
+    private int selectedProvinceCode;
+    private int selectedDistrictCode;
+    private int selectedWardCode;
+    private string streetAddress = "";
     private bool creatingAhaMove;
     private string? ahaMoveModalError;
     private long? ahaMoveEstimatedFee;
     private bool estimatingAhaMove;
+    
+    // Thêm các biến cấu hình Lalamove
+    private string selectedCarrier = "ahamove"; 
+    private string lalamoveQuotationId = "";
+    private string lalamoveSenderStopId = "";
+    private string lalamoveRecipientStopId = "";
     private string trelloName = "";
     private string trelloDesc = "";
     private string? trelloModalError;
@@ -665,6 +893,8 @@
     private string productSearch = "";
     private List<Product> allProducts = [];
     private bool creatingOrder;
+    private bool estimatingOrderFormShipping = false;
+    private string? orderFormShippingError;
     private string? orderFormError;
     private string? orderFormSuccess;
     private bool showAddProductForm;
@@ -822,6 +1052,7 @@
     private async Task ReloadAsync()
     {
         conversations = await InboxSvc.GetConversationsAsync(filter, mineOnly ? currentStaffId : null);
+        var oldSelectedId = selected?.Id;
         selected = conversations.FirstOrDefault(c => c.Id == selectedId);
         if (selected is not null)
         {
@@ -833,6 +1064,18 @@
             }
             messages = await InboxSvc.GetMessagesAsync(selected.Id);
             orders = await InboxSvc.GetOrdersAsync(selected.Id);
+
+            if (oldSelectedId != selected.Id)
+            {
+                custName = selected.CustomerName;
+                custPhone = selected.CustomerPhone;
+                custAddress = selected.CustomerAddress;
+                custSaveMessage = "";
+
+                // Điền sẵn vào form tạo đơn nếu trống
+                orderPhone = selected.CustomerPhone;
+                orderAddress = selected.CustomerAddress;
+            }
         }
     }
 
@@ -987,68 +1230,42 @@
     }
     private void OpenAhaMoveModal(Order order)
     {
-        if (selected is null) return;
         selectedOrderForAhaMove = order;
-        ahaMoveReceiverName = selected.CustomerName;
-        ahaMoveReceiverMobile = "09"; // Tạm thời để trống hoặc lấy từ đâu đó nếu có, ví dụ có thể người dùng nhắn tin sđt.
-        ahaMoveReceiverAddress = "";
-        ahaMoveCod = (long)order.Amount;
-        ahaMoveModalError = null;
+        ahaMoveReceiverName = selected?.CustomerName ?? "";
+        ahaMoveReceiverMobile = order.CustomerPhone ?? "";
+        ahaMoveReceiverAddress = order.CustomerAddress ?? "";
         ahaMoveEstimatedFee = null;
+        ahaMoveModalError = null;
+        lalamoveQuotationId = "";
+        lalamoveSenderStopId = "";
+        lalamoveRecipientStopId = "";
+        
+        selectedCarrier = "lalamove";
+        suggestedLat = null;
+        suggestedLng = null;
+        addressSuggestions.Clear();
+        customerSuggestions.Clear();
+        activeSuggestionField = "";
+        
+        // Reset structured fields
+        selectedProvinceCode = 0;
+        selectedDistrictCode = 0;
+        selectedWardCode = 0;
+        streetAddress = "";
+        districts.Clear();
+        wards.Clear();
+        useStructuredAddress = false;
+        
+        _ = LoadProvincesAsync();
+            
         showAhaMoveModal = true;
     }
 
-    private async Task<AhaMoveOrderRequest> BuildAhaMoveOrderRequestAsync()
+    private void SetCarrier(string carrier)
     {
-        var coords = await AhaMoveSvc.GeocodeAddressAsync(ahaMoveReceiverAddress);
-
-        var req = new AhaMoveOrderRequest
-        {
-            OrderTime = 0,
-            PaymentMethod = "CASH",
-            Remarks = "Giao hàng từ ChumChat",
-            Path = new List<AhaMovePath>
-            {
-                new AhaMovePath
-                {
-                    Lat = Store.AhaMove.SenderLat,
-                    Lng = Store.AhaMove.SenderLng,
-                    Address = Store.AhaMove.SenderAddress,
-                    Name = Store.AhaMove.SenderName,
-                    Mobile = Store.AhaMove.SenderMobile,
-                    Remarks = "Lấy hàng"
-                },
-                new AhaMovePath
-                {
-                    Lat = coords.Lat,
-                    Lng = coords.Lng,
-                    Address = ahaMoveReceiverAddress,
-                    Name = ahaMoveReceiverName,
-                    Mobile = ahaMoveReceiverMobile,
-                    Remarks = "Giao cho khách",
-                    Cod = ahaMoveCod
-                }
-            },
-            Items = selectedOrderForAhaMove!.Items.Select(i => new AhaMoveItem
-            {
-                Id = Guid.NewGuid().ToString(),
-                Name = i.ProductName,
-                Num = i.Quantity,
-                Price = 0
-            }).ToList()
-        };
-
-        if (req.Items.Count == 0)
-        {
-            req.Items.Add(new AhaMoveItem
-            {
-                Id = Guid.NewGuid().ToString(),
-                Name = "Gói hàng ChumChat",
-                Num = 1,
-                Price = 0
-            });
-        }
-        return req;
+        selectedCarrier = carrier;
+        ahaMoveEstimatedFee = null;
+        ahaMoveModalError = null;
     }
 
     private async Task EstimateAhaMoveFee()
@@ -1058,14 +1275,36 @@
         estimatingAhaMove = true;
         ahaMoveModalError = null;
         ahaMoveEstimatedFee = null;
+        lalamoveQuotationId = "";
         try
         {
             if (string.IsNullOrWhiteSpace(ahaMoveReceiverName) || string.IsNullOrWhiteSpace(ahaMoveReceiverMobile) || string.IsNullOrWhiteSpace(ahaMoveReceiverAddress))
                 throw new Exception("Vui lòng nhập đầy đủ Tên, SĐT và Địa chỉ người nhận.");
 
-            var req = await BuildAhaMoveOrderRequestAsync();
-            var fee = await AhaMoveSvc.EstimateOrderFeeAsync(req, Store.AhaMove.Token);
-            ahaMoveEstimatedFee = fee;
+            double lat = 0;
+            double lng = 0;
+
+            if (suggestedLat.HasValue && suggestedLng.HasValue)
+            {
+                lat = suggestedLat.Value;
+                lng = suggestedLng.Value;
+            }
+            else
+            {
+                var coords = await LalamoveSvc.GeocodeAddressAsync(ahaMoveReceiverAddress);
+                lat = coords.Lat;
+                lng = coords.Lng;
+            }
+
+            var res = await LalamoveSvc.EstimateOrderFeeAsync(
+                Store.Lalamove.SenderLat, Store.Lalamove.SenderLng, Store.Lalamove.SenderAddress,
+                lat, lng, ahaMoveReceiverAddress,
+                Store.Lalamove
+            );
+            ahaMoveEstimatedFee = res.TotalFee;
+            lalamoveQuotationId = res.QuotationId;
+            lalamoveSenderStopId = res.SenderStopId;
+            lalamoveRecipientStopId = res.RecipientStopId;
         }
         catch (Exception ex)
         {
@@ -1093,12 +1332,45 @@
             if (string.IsNullOrWhiteSpace(ahaMoveReceiverName) || string.IsNullOrWhiteSpace(ahaMoveReceiverMobile) || string.IsNullOrWhiteSpace(ahaMoveReceiverAddress))
                 throw new Exception("Vui lòng nhập đầy đủ Tên, SĐT và Địa chỉ người nhận.");
 
-            var req = await BuildAhaMoveOrderRequestAsync();
+            if (string.IsNullOrEmpty(lalamoveQuotationId))
+            {
+                double lat = 0;
+                double lng = 0;
 
-            var res = await AhaMoveSvc.CreateOrderAsync(req, Store.AhaMove.Token);
+                if (suggestedLat.HasValue && suggestedLng.HasValue)
+                {
+                    lat = suggestedLat.Value;
+                    lng = suggestedLng.Value;
+                }
+                else
+                {
+                    var coords = await LalamoveSvc.GeocodeAddressAsync(ahaMoveReceiverAddress);
+                    lat = coords.Lat;
+                    lng = coords.Lng;
+                }
+
+                var est = await LalamoveSvc.EstimateOrderFeeAsync(
+                    Store.Lalamove.SenderLat, Store.Lalamove.SenderLng, Store.Lalamove.SenderAddress,
+                    lat, lng, ahaMoveReceiverAddress,
+                    Store.Lalamove
+                );
+                lalamoveQuotationId = est.QuotationId;
+                lalamoveSenderStopId = est.SenderStopId;
+                lalamoveRecipientStopId = est.RecipientStopId;
+            }
+
+            var res = await LalamoveSvc.CreateOrderAsync(
+                lalamoveQuotationId,
+                lalamoveSenderStopId, lalamoveRecipientStopId,
+                Store.Lalamove.SenderName, Store.Lalamove.SenderMobile,
+                ahaMoveReceiverName, ahaMoveReceiverMobile,
+                Store.Lalamove
+            );
             
-            // Cập nhật Database với AhamoveOrderId và AhamoveTrackingLink
-            await InboxSvc.UpdateOrderAhamoveAsync(selectedOrderForAhaMove.Id, res.OrderId, res.SharedLink);
+            var orderId = "Lala:" + res.OrderId;
+            var trackingLink = res.ShareLink;
+
+            await InboxSvc.UpdateOrderAhamoveAsync(selectedOrderForAhaMove.Id, orderId, trackingLink);
             
             showAhaMoveModal = false;
             await ReloadAsync();
@@ -1111,6 +1383,419 @@
         {
             creatingAhaMove = false;
         }
+    }
+
+    private async Task OnAddressInput(ChangeEventArgs e)
+    {
+        var query = e.Value?.ToString() ?? "";
+        ahaMoveReceiverAddress = query;
+        ahaMoveEstimatedFee = null;
+        suggestedLat = null;
+        suggestedLng = null;
+
+        if (string.IsNullOrWhiteSpace(query) || query.Length < 4)
+        {
+            addressSuggestions.Clear();
+            return;
+        }
+
+        addressCts?.Cancel();
+        addressCts = new System.Threading.CancellationTokenSource();
+        var token = addressCts.Token;
+
+        try
+        {
+            await Task.Delay(400, token);
+
+            using var client = new HttpClient();
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("ChumChat/1.0");
+            
+            var url = $"https://nominatim.openstreetmap.org/search?q={Uri.EscapeDataString(query)}&format=json&limit=5&countrycodes=vn";
+            var response = await client.GetAsync(url, token);
+            if (response.IsSuccessStatusCode)
+            {
+                var json = await response.Content.ReadAsStringAsync(token);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+                
+                var temp = new List<AddressSuggestion>();
+                if (root.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in root.EnumerateArray())
+                    {
+                        var displayName = item.GetProperty("display_name").GetString() ?? "";
+                        var latStr = item.GetProperty("lat").GetString() ?? "0";
+                        var lonStr = item.GetProperty("lon").GetString() ?? "0";
+                        
+                        if (double.TryParse(latStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var lat) &&
+                            double.TryParse(lonStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var lon))
+                        {
+                            temp.Add(new AddressSuggestion
+                            {
+                                DisplayName = displayName,
+                                Lat = lat,
+                                Lng = lon
+                            });
+                        }
+                    }
+                }
+                
+                if (!token.IsCancellationRequested)
+                {
+                    addressSuggestions = temp;
+                    StateHasChanged();
+                }
+            }
+        }
+        catch (TaskCanceledException) {}
+        catch (Exception ex)
+        {
+            Console.WriteLine("Lỗi gợi ý địa chỉ: " + ex.Message);
+        }
+    }
+
+    private void SelectAddressSuggestion(AddressSuggestion sug)
+    {
+        ahaMoveReceiverAddress = sug.DisplayName;
+        addressSuggestions.Clear();
+        suggestedLat = sug.Lat;
+        suggestedLng = sug.Lng;
+    }
+
+    public class AddressSuggestion
+    {
+        public string DisplayName { get; set; } = "";
+        public double Lat { get; set; }
+        public double Lng { get; set; }
+    }
+
+    // Các hàm gợi ý khách hàng từ đơn cũ
+    private string custName = "";
+    private string custPhone = "";
+    private string custAddress = "";
+    private string custSaveMessage = "";
+    private bool cancellingLalamove = false;
+
+    private async Task CancelLalamoveOrder(Order order)
+    {
+        if (order is null || string.IsNullOrEmpty(order.AhamoveOrderId) || cancellingLalamove) return;
+        
+        cancellingLalamove = true;
+        custSaveMessage = "";
+        StateHasChanged();
+        try
+        {
+            var success = await LalamoveSvc.CancelOrderAsync(order.AhamoveOrderId, Store.Lalamove);
+            if (success)
+            {
+                await InboxSvc.UpdateOrderAhamoveAsync(order.Id, null, null);
+                custSaveMessage = "✔ Đã hủy đơn giao hàng Lalamove thành công!";
+                await ReloadAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            custSaveMessage = "✕ Lỗi khi hủy đơn Lalamove: " + ex.Message;
+        }
+        finally
+        {
+            cancellingLalamove = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveCustomerProfile()
+    {
+        if (selected is null) return;
+        
+        try
+        {
+            await InboxSvc.UpdateCustomerInfoAsync(selected.Id, custName.Trim(), custPhone.Trim(), custAddress.Trim());
+            selected.CustomerName = custName.Trim();
+            selected.CustomerPhone = custPhone.Trim();
+            selected.CustomerAddress = custAddress.Trim();
+            
+            orderPhone = custPhone.Trim();
+            orderAddress = custAddress.Trim();
+            
+            custSaveMessage = "✔ Đã lưu thông tin khách hàng!";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            custSaveMessage = "✕ Lỗi khi lưu: " + ex.Message;
+        }
+    }
+
+    private async Task EstimateOrderFormShippingFee()
+    {
+        if (string.IsNullOrWhiteSpace(orderAddress) || estimatingOrderFormShipping) return;
+
+        estimatingOrderFormShipping = true;
+        orderFormShippingError = null;
+        StateHasChanged();
+        try
+        {
+            var coords = await LalamoveSvc.GeocodeAddressAsync(orderAddress);
+            if (coords.Lat == 0 && coords.Lng == 0)
+            {
+                throw new Exception("Không định vị được địa chỉ giao hàng.");
+            }
+
+            var res = await LalamoveSvc.EstimateOrderFeeAsync(
+                Store.Lalamove.SenderLat, Store.Lalamove.SenderLng, Store.Lalamove.SenderAddress,
+                coords.Lat, coords.Lng, orderAddress,
+                Store.Lalamove
+            );
+            
+            orderShipping = res.TotalFee;
+        }
+        catch (Exception ex)
+        {
+            orderFormShippingError = ex.Message;
+        }
+        finally
+        {
+            estimatingOrderFormShipping = false;
+            StateHasChanged();
+        }
+    }
+
+    private string GetLalamoveStatusText(string? status)
+    {
+        if (string.IsNullOrEmpty(status)) return "Đang tìm tài xế";
+        return status switch
+        {
+            "ASSIGNING_DRIVER" => "Đang tìm tài xế",
+            "ON_GOING" => "Đang giao hàng",
+            "PICKED_UP" => "Đã lấy hàng",
+            "COMPLETED" => "Đã giao thành công",
+            "CANCELED" => "Đã hủy đơn",
+            "REJECTED" => "Tài xế từ chối",
+            "EXPIRED" => "Đã hết hạn",
+            _ => status
+        };
+    }
+
+    private string GetLalamoveStatusColor(string? status)
+    {
+        if (string.IsNullOrEmpty(status)) return "#f59e0b"; // orange
+        return status switch
+        {
+            "ASSIGNING_DRIVER" => "#f59e0b",
+            "ON_GOING" => "#3b82f6", // blue
+            "PICKED_UP" => "#8b5cf6", // purple
+            "COMPLETED" => "#10b981", // green
+            "CANCELED" => "#ef4444", // red
+            "REJECTED" => "#ef4444",
+            "EXPIRED" => "#6b7280", // gray
+            _ => "#f59e0b"
+        };
+    }
+
+    private async Task OnChannelSelectChanged(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        if (string.IsNullOrEmpty(val))
+        {
+            await SetFilter(null);
+        }
+        else if (Enum.TryParse<ChannelType>(val, out var ch))
+        {
+            await SetFilter(ch);
+        }
+    }
+
+    private async Task OnOrderPhoneInput(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString() ?? "";
+        orderPhone = val;
+        activeSuggestionField = "order";
+        
+        if (string.IsNullOrWhiteSpace(val) || val.Length < 3)
+        {
+            customerSuggestions.Clear();
+            return;
+        }
+        
+        customerSuggestions = await InboxSvc.SearchCustomersAsync(val);
+    }
+
+    private async Task OnLalamovePhoneInput(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString() ?? "";
+        ahaMoveReceiverMobile = val;
+        activeSuggestionField = "lalamove";
+        
+        if (string.IsNullOrWhiteSpace(val) || val.Length < 3)
+        {
+            customerSuggestions.Clear();
+            return;
+        }
+        
+        customerSuggestions = await InboxSvc.SearchCustomersAsync(val);
+    }
+
+    private void SelectCustomerSuggestion(InboxService.CustomerInfo sug, string field)
+    {
+        if (field == "order")
+        {
+            orderPhone = sug.Phone;
+            orderAddress = sug.Address;
+        }
+        else if (field == "lalamove")
+        {
+            ahaMoveReceiverMobile = sug.Phone;
+            ahaMoveReceiverName = sug.Name;
+            
+            useStructuredAddress = false;
+            ahaMoveReceiverAddress = sug.Address;
+            ahaMoveEstimatedFee = null;
+            suggestedLat = null;
+            suggestedLng = null;
+        }
+        customerSuggestions.Clear();
+        activeSuggestionField = "";
+    }
+
+    // Các hàm xử lý Tỉnh/Quận/Phường
+    private async Task LoadProvincesAsync()
+    {
+        if (provinces.Count == 0)
+        {
+            try
+            {
+                using var client = new HttpClient();
+                provinces = await client.GetFromJsonAsync<List<Province>>("https://provinces.open-api.vn/api/v2/p/") ?? [];
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Lỗi tải danh sách tỉnh: " + ex.Message);
+            }
+        }
+    }
+
+    private async Task OnProvinceChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var code))
+        {
+            selectedProvinceCode = code;
+            selectedDistrictCode = 0;
+            selectedWardCode = 0;
+            districts.Clear();
+            wards.Clear();
+            
+            if (code > 0)
+            {
+                try
+                {
+                    using var client = new HttpClient();
+                    var res = await client.GetFromJsonAsync<ProvinceDetail>($"https://provinces.open-api.vn/api/v2/p/{code}?depth=2");
+                    if (res != null)
+                    {
+                        districts = res.Districts;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Lỗi tải danh sách huyện: " + ex.Message);
+                }
+            }
+            UpdateFullAddress();
+        }
+    }
+
+    private async Task OnDistrictChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var code))
+        {
+            selectedDistrictCode = code;
+            selectedWardCode = 0;
+            wards.Clear();
+            
+            if (code > 0)
+            {
+                try
+                {
+                    using var client = new HttpClient();
+                    var res = await client.GetFromJsonAsync<DistrictDetail>($"https://provinces.open-api.vn/api/v2/d/{code}?depth=2");
+                    if (res != null)
+                    {
+                        wards = res.Wards;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Lỗi tải danh sách xã: " + ex.Message);
+                }
+            }
+            UpdateFullAddress();
+        }
+    }
+
+    private void OnWardChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var code))
+        {
+            selectedWardCode = code;
+            UpdateFullAddress();
+        }
+    }
+
+    private void OnStreetInput(ChangeEventArgs e)
+    {
+        streetAddress = e.Value?.ToString() ?? "";
+        UpdateFullAddress();
+    }
+
+    private void UpdateFullAddress()
+    {
+        var pName = provinces.FirstOrDefault(p => p.Code == selectedProvinceCode)?.Name ?? "";
+        var dName = districts.FirstOrDefault(d => d.Code == selectedDistrictCode)?.Name ?? "";
+        var wName = wards.FirstOrDefault(w => w.Code == selectedWardCode)?.Name ?? "";
+        
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(streetAddress)) parts.Add(streetAddress.Trim());
+        if (!string.IsNullOrWhiteSpace(wName)) parts.Add(wName);
+        if (!string.IsNullOrWhiteSpace(dName)) parts.Add(dName);
+        if (!string.IsNullOrWhiteSpace(pName)) parts.Add(pName);
+        
+        ahaMoveReceiverAddress = string.Join(", ", parts);
+        ahaMoveEstimatedFee = null; // reset fee
+        suggestedLat = null;
+        suggestedLng = null;
+    }
+
+    public class Province
+    {
+        public int Code { get; set; }
+        public string Name { get; set; } = "";
+    }
+
+    public class District
+    {
+        public int Code { get; set; }
+        public string Name { get; set; } = "";
+    }
+
+    public class Ward
+    {
+        public int Code { get; set; }
+        public string Name { get; set; } = "";
+    }
+
+    public class ProvinceDetail
+    {
+        public int Code { get; set; }
+        public string Name { get; set; } = "";
+        public List<District> Districts { get; set; } = [];
+    }
+
+    public class DistrictDetail
+    {
+        public int Code { get; set; }
+        public string Name { get; set; } = "";
+        public List<Ward> Wards { get; set; } = [];
     }
 
     // Nhân viên chọn ảnh → lưu vào wwwroot/uploads → gửi ngay cho khách

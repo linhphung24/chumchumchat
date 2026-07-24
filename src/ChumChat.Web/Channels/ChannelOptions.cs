@@ -102,6 +102,14 @@ public class AiOptions
 
     // Thông tin shop để AI trả lời đúng bối cảnh (tên shop, sản phẩm, chính sách, giọng điệu...)
     public string ShopContext { get; set; } = "";
+
+    // AI Tự động trả lời khách hàng
+    public bool IsAutoReplyEnabled { get; set; } = false;
+
+    // Ngân hàng thanh toán QR (VietQR)
+    public string BankName { get; set; } = ""; // VD: MBBank, VCB
+    public string BankAccount { get; set; } = ""; // Số tài khoản
+    public string BankAccountName { get; set; } = ""; // Tên chủ thẻ
 }
 
 // Tích hợp Trello: tạo thẻ khi chốt đơn — lấy key/token tại trello.com/power-ups/admin
@@ -165,4 +173,19 @@ public class GoogleLocationOptions
     public string AccountId { get; set; } = ""; // Google Business Profile Account ID
     public string LocationId { get; set; } = ""; // Google Maps Location ID
     public string AccountName { get; set; } = "";
+}
+
+public class LalamoveOptions
+{
+    public string ApiKey { get; set; } = "";
+    public string ApiSecret { get; set; } = "";
+    public bool IsSandbox { get; set; } = true;
+
+    // Sender Information
+    public string SenderName { get; set; } = "CÔNG TY TNHH SẢN XUẤT VÀ THƯƠNG MẠI CHUM CHUM";
+    public string SenderMobile { get; set; } = "0949597688";
+    public string SenderAddress { get; set; } = "7/28 Thành Thái, Phường 14, Quận 10, Thành phố Hồ Chí Minh";
+    public double SenderLat { get; set; } = 10.76975346;
+    public double SenderLng { get; set; } = 106.6636615;
+    public string ServiceType { get; set; } = "MOTORCYCLE";
 }

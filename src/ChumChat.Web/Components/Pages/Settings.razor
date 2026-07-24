@@ -14,7 +14,7 @@
 @inject QuickReplyService QuickReplies
 @inject WebhookLogService WebhookLog
 @inject SidecarManagerService SidecarManager
-@inject AhaMoveService AhaMoveSvc
+@inject LalamoveService LalamoveSvc
 
 <PageTitle>Cấu hình hệ thống — ChumChat</PageTitle>
 
@@ -218,13 +218,15 @@
                 </div>
             </section>
 
+
+
             <section class="channel-card">
                 <header>
-                    <span class="channel-dot" style="background:#ea5800"></span>
-                    <h2>Giao hàng AhaMove</h2>
-                    @if (!string.IsNullOrEmpty(ahaMove.Token))
+                    <span class="channel-dot" style="background:#f43f5e"></span>
+                    <h2>Giao hàng Lalamove</h2>
+                    @if (!string.IsNullOrEmpty(lalamove.ApiKey))
                     {
-                        <span class="status-badge connected">Đã xác thực</span>
+                        <span class="status-badge connected">Đã cấu hình</span>
                     }
                     else
                     {
@@ -232,26 +234,38 @@
                     }
                 </header>
                 <details class="guide">
-                    <summary>📖 Cấu hình giao hàng AhaMove</summary>
-                    <p>Nhập số điện thoại và API Key đã đăng ký tài khoản Đối tác của AhaMove để lấy Token dùng cho việc gọi xe tự động.</p>
+                    <summary>📖 Cấu hình giao hàng Lalamove</summary>
+                    <p>Nhập API Key và API Secret từ Lalamove Partner Portal để tự động gọi xe và ước tính phí ship.</p>
                 </details>
                 <div class="fields">
-                    <label>Số điện thoại <input @bind="ahaMove.Mobile" placeholder="849xxxx" /></label>
-                    <label>API Key <input type="password" @bind="ahaMove.ApiKey" placeholder="API Key của AhaMove" /></label>
-                    <label>Tên Shop <input @bind="ahaMove.SenderName" placeholder="Tên người gửi" /></label>
-                    <label>SĐT Shop <input @bind="ahaMove.SenderMobile" placeholder="SĐT người gửi" /></label>
+                    <label>API Key <input type="password" @bind="lalamove.ApiKey" placeholder="API Key của Lalamove" /></label>
+                    <label>API Secret <input type="password" @bind="lalamove.ApiSecret" placeholder="API Secret của Lalamove" /></label>
+                    <label>Tên Shop <input @bind="lalamove.SenderName" placeholder="Tên người gửi" /></label>
+                    <label>SĐT Shop <input @bind="lalamove.SenderMobile" placeholder="SĐT người gửi" /></label>
                 </div>
-                <label class="full-field">Địa chỉ lấy hàng mặc định
-                    <textarea @bind="ahaMove.SenderAddress" rows="2" placeholder="VD: 7/28 Thành Thái, Quận 10... Hoặc dán trực tiếp link Google Maps vào đây (Rất khuyến khích)"></textarea>
+                <div class="fields" style="margin-top: 10px;">
+                    <label>Loại xe
+                        <select @bind="lalamove.ServiceType">
+                            <option value="MOTORCYCLE">Xe máy (MOTORCYCLE)</option>
+                            <option value="CAR">Ô tô (CAR)</option>
+                            <option value="TRUCK500">Xe tải 500kg (TRUCK500)</option>
+                        </select>
+                    </label>
+                    <label class="toggle-field" style="display: flex; align-items: center; gap: 8px; margin-top: 25px; font-weight: normal;">
+                        <input type="checkbox" @bind="lalamove.IsSandbox" /> Thử nghiệm (Sandbox)
+                    </label>
+                </div>
+                <label class="full-field" style="margin-top: 10px;">Địa chỉ lấy hàng mặc định
+                    <textarea @bind="lalamove.SenderAddress" rows="2" placeholder="VD: 7/28 Thành Thái, Quận 10... Hoặc dán link Google Maps"></textarea>
                 </label>
                 <div class="actions">
-                    <button class="btn-save" @onclick="SaveAhaMove" disabled="@isAhaMoveLoading">
-                        @(isAhaMoveLoading ? "Đang xử lý..." : "Lưu & Lấy Token")
+                    <button class="btn-save" style="background: #f43f5e;" @onclick="SaveLalamove" disabled="@isLalamoveLoading">
+                        @(isLalamoveLoading ? "Đang xử lý..." : "Lưu cấu hình Lalamove")
                     </button>
                 </div>
-                @if (ahaMoveError is not null)
+                @if (lalamoveError is not null)
                 {
-                    <p class="modal-error">✕ @ahaMoveError</p>
+                    <p class="modal-error">✕ @lalamoveError</p>
                 }
             </section>
         }
@@ -764,9 +778,9 @@
     private ThreadsOptions threads = new();
     private GoogleLocationOptions googleLocation = new();
     private TrelloOptions trello = new();
-    private AhaMoveOptions ahaMove = new();
-    private bool isAhaMoveLoading;
-    private string? ahaMoveError;
+    private LalamoveOptions lalamove = new();
+    private bool isLalamoveLoading;
+    private string? lalamoveError;
 
     private List<Staff> staffList = [];
     private string newStaffUsername = "", newStaffName = "", newStaffPassword = "";
@@ -854,7 +868,7 @@
         threads = Clone(Store.Threads);
         googleLocation = Clone(Store.GoogleLocation);
         trello = Clone(Store.Trello);
-        ahaMove = Clone(Store.AhaMove);
+        lalamove = Clone(Store.Lalamove);
 
         staffList = await StaffSvc.GetAllAsync();
         quickList = await QuickReplies.GetAllAsync();
@@ -911,41 +925,39 @@
     private async Task SaveTikTok() { await Store.SaveTikTokAsync(Clone(tiktok)); ShowSaved(); }
     private async Task SaveTrello() { await Store.SaveTrelloAsync(Clone(trello)); ShowSaved(); }
 
-    private async Task SaveAhaMove()
+
+
+    private async Task SaveLalamove()
     {
-        isAhaMoveLoading = true;
-        ahaMoveError = null;
+        isLalamoveLoading = true;
+        lalamoveError = null;
         StateHasChanged();
 
         try
         {
-            if (string.IsNullOrWhiteSpace(ahaMove.Mobile) || string.IsNullOrWhiteSpace(ahaMove.ApiKey))
+            if (string.IsNullOrWhiteSpace(lalamove.ApiKey) || string.IsNullOrWhiteSpace(lalamove.ApiSecret))
             {
-                throw new Exception("Vui lòng nhập Số điện thoại và API Key.");
+                throw new Exception("Vui lòng nhập API Key và API Secret.");
             }
 
-            // Get token
-            var token = await AhaMoveSvc.AuthenticateAsync(ahaMove.Mobile, ahaMove.ApiKey, ahaMove.SenderName);
-            ahaMove.Token = token;
-
-            // Optional: Geocode the sender address if changed
-            if (!string.IsNullOrWhiteSpace(ahaMove.SenderAddress))
+            // Geocode sender address
+            if (!string.IsNullOrWhiteSpace(lalamove.SenderAddress))
             {
-                var coords = await AhaMoveSvc.GeocodeAddressAsync(ahaMove.SenderAddress);
-                ahaMove.SenderLat = coords.Lat;
-                ahaMove.SenderLng = coords.Lng;
+                var coords = await LalamoveSvc.GeocodeAddressAsync(lalamove.SenderAddress);
+                lalamove.SenderLat = coords.Lat;
+                lalamove.SenderLng = coords.Lng;
             }
 
-            await Store.SaveAhaMoveAsync(Clone(ahaMove));
+            await Store.SaveLalamoveAsync(Clone(lalamove));
             ShowSaved();
         }
         catch (Exception ex)
         {
-            ahaMoveError = ex.Message;
+            lalamoveError = ex.Message;
         }
         finally
         {
-            isAhaMoveLoading = false;
+            isLalamoveLoading = false;
         }
     }
     private async Task ConnectZaloPersonal()

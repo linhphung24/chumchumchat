@@ -57,7 +57,10 @@ public class Conversation
 
     // Thẻ trạng thái do nhân viên gắn: Đang tư vấn / Chờ phản hồi / Đã chốt đơn / Hủy
     public string Tag { get; set; } = "";
-
+    
+    public string CustomerPhone { get; set; } = "";
+    public string CustomerAddress { get; set; } = "";
+ 
     public List<Message> Messages { get; set; } = [];
 }
 
@@ -156,7 +159,14 @@ public class Product
     // Giá bán mặc định (VND)
     public long Price { get; set; }
 
+    public string ImageUrl { get; set; } = "";
+
+    public string Description { get; set; } = "";
+
     public bool IsActive { get; set; } = true;
+
+    // Số lượng còn lại trong kho (Tồn kho)
+    public int StockQuantity { get; set; } = 999;
 }
 
 // Lịch sử đặt hàng của khách, ghi tay hoặc tự ghi khi tạo thẻ Trello
@@ -195,6 +205,7 @@ public class Order
     // Giao hàng Ahamove
     public string? AhamoveOrderId { get; set; }
     public string? AhamoveTrackingLink { get; set; }
+    public string? AhamoveStatus { get; set; }
 }
 
 // Dòng sản phẩm trong đơn hàng

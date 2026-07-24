@@ -7,6 +7,7 @@
 @inject ChannelSettingsStore Store
 @inject AiKnowledgeService Knowledge
 @inject AutoReplyService AutoReply
+@inject IposSyncService IposSync
 @inject IWebHostEnvironment HostEnv
 
 <PageTitle>Trợ lý AI — ChumChat</PageTitle>
@@ -79,13 +80,88 @@
             <span class="channel-dot" style="background:#0068ff"></span>
             <h2>🏪 Thông tin tiệm</h2>
         </header>
-        <p class="settings-hint">Mô tả tiệm, sản phẩm, chính sách giao hàng/đổi trả, giọng điệu xưng hô... AI dùng để trả lời đúng bối cảnh.</p>
-        <label class="full-field">
-            <textarea @bind="ai.ShopContext" rows="6"
-                      placeholder="VD: Tiệm ChumChum Bakery bán bánh sinh nhật, bánh kem, cupcake. Giao nội thành TP trong ngày, phí ship 20-40k. Đặt trước tối thiểu 4 tiếng. Đổi trả nếu bánh lỗi. Xưng 'shop', gọi khách 'bạn/anh/chị', giọng thân thiện dễ thương..."></textarea>
+        <p class="settings-hint">Chia nhỏ thông tin giúp AI dễ học bối cảnh của tiệm hơn.</p>
+        
+        <label class="full-field" style="margin-top: 15px;">🏪 <b>Mô tả tiệm & Sản phẩm</b>
+            <textarea @bind="shopInfo" rows="4" style="margin-top: 5px;"
+                      placeholder="VD: Tiệm ChumChum Bakery chuyên bán các dòng bánh trung thu homemade, bánh kem sinh nhật, mochi... Các nguyên liệu tự nhiên..."></textarea>
         </label>
+
+        <label class="full-field" style="margin-top: 15px;">🚚 <b>Quy trình giao / nhận hàng</b>
+            <textarea @bind="deliveryProcess" rows="4" style="margin-top: 5px;"
+                      placeholder="VD: Nhận ship tận nhà qua AhaMove trong ngày (khách gửi SĐT + địa chỉ). Hoặc khách có thể đến lấy trực tiếp tại: 237 Đ. Ngũ Hiệp, Thanh Trì, Hà Nội. Phí ship tính theo app AhaMove..."></textarea>
+        </label>
+
+        <label class="full-field" style="margin-top: 15px;">📜 <b>Quy tắc & Chỉ đạo tư vấn của AI (System Rules)</b>
+            <textarea @bind="systemRules" rows="5" style="margin-top: 5px; font-family: monospace; font-size: 13px; line-height: 1.5;"
+                      placeholder="VD:&#10;- Tra cứu Thực đơn & Bảng giá iPOS bên dưới để tư vấn món và báo giá chính xác cho khách.&#10;- Nếu món khách hỏi CÓ trong iPOS (ví dụ bánh bao, bánh trung thu...): Báo có và báo giá.&#10;- Khi khách chỉ hỏi câu hỏi đơn thuần (VD: 'tiệm có bánh bao không', 'ở đâu'): CHỈ TRẢ LỜI ĐÚNG CÂU HỎI ĐÓ, KHÔNG tự ghép đơn cũ hay ép khách chốt đơn."></textarea>
+        </label>
+
+        <div class="actions" style="margin-top: 15px;">
+            <button class="btn-save" @onclick="SaveConnection">Lưu thông tin tiệm & Quy tắc</button>
+        </div>
+    </section>
+
+    @* ===== CHẾ ĐỘ TỰ ĐỘNG ===== *@
+    <section class="channel-card">
+        <header>
+            <span class="channel-dot" style="background:#e11d48"></span>
+            <h2>⚡ AI Tự động chốt đơn</h2>
+            <div class="toggle-switch">
+                <input type="checkbox" id="aiAutoReply" @bind="ai.IsAutoReplyEnabled" />
+                <label for="aiAutoReply"></label>
+            </div>
+        </header>
+        <p class="settings-hint">Bật chế độ này, AI sẽ tự động thay bạn chat với khách (trừ các tin nhắn bạn đã nhận xử lý). AI sẽ tư vấn, lấy SĐT, địa chỉ và gửi QR thanh toán để chốt đơn.</p>
+        
+        @if (ai.IsAutoReplyEnabled)
+        {
+            <h4 class="sub-head" style="margin-top:15px; border-bottom:1px solid #e2e8f0; padding-bottom:5px;">Ngân hàng thanh toán (QR)</h4>
+            <div class="fields">
+                <label>Ngân hàng <input @bind="ai.BankName" placeholder="VD: MBBank, Vietcombank" /></label>
+                <label>Số tài khoản <input @bind="ai.BankAccount" placeholder="Nhập số tài khoản" /></label>
+            </div>
+            <label class="full-field" style="margin-top:10px;">Tên chủ tài khoản
+                <input @bind="ai.BankAccountName" placeholder="Tên in hoa không dấu" />
+            </label>
+        }
         <div class="actions">
             <button class="btn-save" @onclick="SaveConnection">Lưu</button>
+        </div>
+    </section>
+
+    @* ===== ĐỒNG BỘ IPOS ===== *@
+    <section class="channel-card">
+        <header>
+            <span class="channel-dot" style="background:#10b981"></span>
+            <h2>🔄 Thực đơn từ iPOS</h2>
+            @if (isSyncing)
+            {
+                <span class="status-badge connected">Đang đồng bộ...</span>
+            }
+        </header>
+        <p class="settings-hint">Đồng bộ sản phẩm, giá bán và trạng thái món ăn trực tiếp từ trang web iPOS của tiệm vào ChumChat để AI có thông tin tư vấn chính xác.</p>
+        
+        @if (syncResult is not null)
+        {
+            <div class="banner banner-ok" style="margin-bottom:15px; padding:10px; font-size:13px; background:#d1fae5; color:#065f46; border:1px solid #10b981; border-radius:6px;">
+                ✅ @syncResult
+            </div>
+        }
+        @if (syncError is not null)
+        {
+            <div class="banner banner-error" style="margin-bottom:15px; padding:10px; font-size:13px; background:#fee2e2; color:#991b1b; border:1px solid #ef4444; border-radius:6px;">
+                ✕ Lỗi: @syncError
+            </div>
+        }
+
+        <div class="actions" style="display: flex; gap: 10px;">
+            <button class="btn-save" style="background:#10b981" @onclick="SyncMenuFromIpos" disabled="@isSyncing">
+                @(isSyncing ? "Đang xử lý..." : "Bắt đầu đồng bộ từ iPOS")
+            </button>
+            <a href="/thuc-don" class="btn-save" style="background:#0284c7; text-decoration:none; display:inline-flex; align-items:center; justify-content:center;">
+                🍔 Xem & Quản Lý Tồn Kho Thực Đơn ↗
+            </a>
         </div>
     </section>
 
@@ -235,6 +311,37 @@
     private List<AiFaq> faqs = [];
     private List<AiKnowledgeImage> images = [];
 
+    // Cấu hình Đồng bộ iPOS
+    private bool isSyncing = false;
+    private string? syncResult;
+    private string? syncError;
+
+    // Các trường chi tiết của ShopContext
+    private string shopInfo = "";
+    private string deliveryProcess = "";
+    private string aiTone = "";
+    private string systemRules = "";
+
+    private async Task SyncMenuFromIpos()
+    {
+        isSyncing = true;
+        syncResult = null;
+        syncError = null;
+        try
+        {
+            var result = await IposSync.SyncMenuAsync();
+            syncResult = $"Đồng bộ hoàn tất! Tìm thấy {result.Total} món ăn từ iPOS. Đã tạo mới {result.NewCount} món và cập nhật {result.UpdatedCount} món.";
+        }
+        catch (Exception ex)
+        {
+            syncError = ex.Message;
+        }
+        finally
+        {
+            isSyncing = false;
+        }
+    }
+
     private string newFaqQuestion = "", newFaqAnswer = "";
     private string newImageCaption = "";
     private bool uploading;
@@ -320,6 +427,32 @@
         ai = Clone(Store.Ai);
         if (string.IsNullOrEmpty(ai.Provider))
             ai.Provider = "anthropic";
+            
+        // Phân rã ShopContext thành 3 phần nếu là JSON
+        if (!string.IsNullOrWhiteSpace(ai.ShopContext))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(ai.ShopContext);
+                var root = doc.RootElement;
+                if (root.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    shopInfo = root.TryGetProperty("shopInfo", out var info) ? info.GetString() ?? "" : "";
+                    deliveryProcess = root.TryGetProperty("deliveryProcess", out var dev) ? dev.GetString() ?? "" : "";
+                    aiTone = root.TryGetProperty("aiTone", out var tone) ? tone.GetString() ?? "" : "";
+                    systemRules = root.TryGetProperty("systemRules", out var sRules) ? sRules.GetString() ?? "" : "";
+                }
+                else
+                {
+                    shopInfo = ai.ShopContext;
+                }
+            }
+            catch
+            {
+                shopInfo = ai.ShopContext;
+            }
+        }
+
         faqs = await Knowledge.GetFaqsAsync();
         images = await Knowledge.GetImagesAsync();
         rules = await AutoReply.GetAllAsync();
@@ -337,8 +470,11 @@
 
     private async Task SaveConnection()
     {
+        var contextObj = new { shopInfo, deliveryProcess, aiTone, systemRules };
+        ai.ShopContext = System.Text.Json.JsonSerializer.Serialize(contextObj);
+        
         await Store.SaveAiAsync(Clone(ai));
-        banner = "✔ Đã lưu";
+        banner = "✔ Đã lưu thông tin & quy tắc tư vấn AI!";
         bannerIsError = false;
     }
 

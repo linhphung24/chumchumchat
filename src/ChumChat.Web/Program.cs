@@ -57,7 +57,10 @@ builder.Services.AddScoped<QuickReplyService>();
 builder.Services.AddHostedService<TokenRefreshService>();
 builder.Services.AddSingleton<SidecarManagerService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<SidecarManagerService>());
-builder.Services.AddSingleton<AhaMoveService>();
+builder.Services.AddSingleton<LalamoveService>();
+builder.Services.AddSingleton<IposSyncService>();
+
+builder.Services.AddCors();
 
 var app = builder.Build();
 
@@ -89,6 +92,18 @@ using (var scope = app.Services.CreateScope())
         .AsEnumerable().First() > 0;
     if (!hasTagColumn)
         db.Database.ExecuteSqlRaw("""ALTER TABLE "Conversations" ADD COLUMN "Tag" TEXT NOT NULL DEFAULT ''""");
+
+    var hasPhoneColumn = db.Database
+        .SqlQueryRaw<int>("SELECT COUNT(*) AS \"Value\" FROM pragma_table_info('Conversations') WHERE name='CustomerPhone'")
+        .AsEnumerable().First() > 0;
+    if (!hasPhoneColumn)
+        db.Database.ExecuteSqlRaw("""ALTER TABLE "Conversations" ADD COLUMN "CustomerPhone" TEXT NOT NULL DEFAULT ''""");
+
+    var hasAddressColumn = db.Database
+        .SqlQueryRaw<int>("SELECT COUNT(*) AS \"Value\" FROM pragma_table_info('Conversations') WHERE name='CustomerAddress'")
+        .AsEnumerable().First() > 0;
+    if (!hasAddressColumn)
+        db.Database.ExecuteSqlRaw("""ALTER TABLE "Conversations" ADD COLUMN "CustomerAddress" TEXT NOT NULL DEFAULT ''""");
 
     var hasAttachmentColumn = db.Database
         .SqlQueryRaw<int>("SELECT COUNT(*) AS \"Value\" FROM pragma_table_info('Messages') WHERE name='AttachmentUrl'")
@@ -202,10 +217,26 @@ using (var scope = app.Services.CreateScope())
         ("Discount", """ALTER TABLE "Orders" ADD COLUMN "Discount" INTEGER NOT NULL DEFAULT 0"""),
         ("AhamoveOrderId", """ALTER TABLE "Orders" ADD COLUMN "AhamoveOrderId" TEXT NULL"""),
         ("AhamoveTrackingLink", """ALTER TABLE "Orders" ADD COLUMN "AhamoveTrackingLink" TEXT NULL"""),
+        ("AhamoveStatus", """ALTER TABLE "Orders" ADD COLUMN "AhamoveStatus" TEXT NULL"""),
     })
     {
         var has = db.Database
             .SqlQueryRaw<int>($"SELECT COUNT(*) AS \"Value\" FROM pragma_table_info('Orders') WHERE name='{col}'")
+            .AsEnumerable().First() > 0;
+        if (!has)
+            db.Database.ExecuteSqlRaw(ddl);
+    }
+
+    // Cột mới trên bảng Products
+    foreach (var (col, ddl) in new[]
+    {
+        ("ImageUrl", """ALTER TABLE "Products" ADD COLUMN "ImageUrl" TEXT NOT NULL DEFAULT ''"""),
+        ("Description", """ALTER TABLE "Products" ADD COLUMN "Description" TEXT NOT NULL DEFAULT ''"""),
+        ("StockQuantity", """ALTER TABLE "Products" ADD COLUMN "StockQuantity" INTEGER NOT NULL DEFAULT 999"""),
+    })
+    {
+        var has = db.Database
+            .SqlQueryRaw<int>($"SELECT COUNT(*) AS \"Value\" FROM pragma_table_info('Products') WHERE name='{col}'")
             .AsEnumerable().First() > 0;
         if (!has)
             db.Database.ExecuteSqlRaw(ddl);
@@ -272,5 +303,44 @@ app.MapPost("/api/push/test", async (PushNotificationService pushService) =>
     );
     return Results.Ok(res);
 }).RequireAuthorization();
+
+// --- Zalo Mini App APIs ---
+// Bật CORS cho ZMA (do ZMA gọi API từ domain zalo.me hoặc localhost)
+app.UseCors(b => b.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+
+app.MapGet("/api/products", async (AppDbContext db) =>
+{
+    var products = await db.Products.Where(p => p.IsActive).ToListAsync();
+    return Results.Ok(products);
+});
+
+app.MapPost("/api/orders", async (AppDbContext db, Order orderReq) =>
+{
+    orderReq.CreatedAt = DateTime.UtcNow;
+    
+    // Tìm hoặc tạo conversation "zalo-miniapp" (có thể dùng sđt của KH làm externalId)
+    // Tạm thời cho vào một cuộc hội thoại chung hoặc tìm theo SĐT
+    var conv = await db.Conversations.FirstOrDefaultAsync(c => c.ExternalId == orderReq.CustomerPhone && c.Channel == ChannelType.Zalo);
+    if (conv == null)
+    {
+        conv = new Conversation
+        {
+            Channel = ChannelType.Zalo, // Coi như Zalo
+            ExternalId = orderReq.CustomerPhone,
+            CustomerName = orderReq.CustomerPhone, // Tên tạm
+            AvatarUrl = "",
+            LastMessageAt = DateTime.UtcNow,
+            Tag = "Đơn Zalo Mini App"
+        };
+        db.Conversations.Add(conv);
+        await db.SaveChangesAsync();
+    }
+    
+    orderReq.ConversationId = conv.Id;
+    db.Orders.Add(orderReq);
+    await db.SaveChangesAsync();
+    
+    return Results.Ok(new { success = true, orderId = orderReq.Id });
+});
 
 app.Run();

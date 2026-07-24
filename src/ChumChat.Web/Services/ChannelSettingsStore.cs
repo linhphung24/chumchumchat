@@ -24,7 +24,7 @@ public class ChannelSettingsStore(
     private ThreadsOptions threads = new();
     private GoogleLocationOptions googleLocation = new();
     private TrelloOptions trello = new();
-    private AhaMoveOptions ahaMove = new();
+    private LalamoveOptions lalamove = new();
     private AiOptions ai = new();
     private VapidSettings? vapid;
 
@@ -40,7 +40,7 @@ public class ChannelSettingsStore(
     public ThreadsOptions Threads => threads;
     public GoogleLocationOptions GoogleLocation => googleLocation;
     public TrelloOptions Trello => trello;
-    public AhaMoveOptions AhaMove => ahaMove;
+    public LalamoveOptions Lalamove => lalamove;
     public AiOptions Ai => ai;
     public VapidSettings Vapid => vapid ?? new();
 
@@ -61,7 +61,7 @@ public class ChannelSettingsStore(
         googleLocation = Load<GoogleLocationOptions>(rows, ChannelType.GoogleLocation, "GoogleLocation");
 
         trello = await LoadAppSettingAsync<TrelloOptions>(db, "Trello");
-        ahaMove = await LoadAppSettingAsync<AhaMoveOptions>(db, "AhaMove");
+        lalamove = await LoadAppSettingAsync<LalamoveOptions>(db, "Lalamove");
         ai = await LoadAppSettingAsync<AiOptions>(db, "Ai");
 
         vapid = await LoadAppSettingAsync<VapidSettings>(db, "Vapid");
@@ -127,7 +127,7 @@ public class ChannelSettingsStore(
     }
 
     public Task SaveTrelloAsync(TrelloOptions options) => SaveAppSettingAsync("Trello", options, () => trello = options);
-    public Task SaveAhaMoveAsync(AhaMoveOptions options) => SaveAppSettingAsync("AhaMove", options, () => ahaMove = options);
+    public Task SaveLalamoveAsync(LalamoveOptions options) => SaveAppSettingAsync("Lalamove", options, () => lalamove = options);
     public Task SaveAiAsync(AiOptions options) => SaveAppSettingAsync("Ai", options, () => ai = options);
 
     private async Task SaveAppSettingAsync<T>(string key, T options, Action applyToCache)
