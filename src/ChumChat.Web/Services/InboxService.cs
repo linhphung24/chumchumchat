@@ -57,7 +57,7 @@ public class InboxService(
 
         conversation.Messages.Add(new Message
         {
-            Direction = MessageDirection.Inbound,
+            Direction = inbound.Direction,
             Status = simulated ? MessageStatus.Simulated : MessageStatus.Sent,
             Text = inbound.Text,
             AttachmentUrl = inbound.AttachmentUrl,
@@ -277,6 +277,46 @@ public class InboxService(
         return message;
     }
 
+    public async Task<Message> SendStickerAsync(int conversationId, string keyword)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var conversation = await db.Conversations.FirstAsync(c => c.Id == conversationId);
+
+        var message = new Message
+        {
+            ConversationId = conversationId,
+            Direction = MessageDirection.Outbound,
+            Text = $"😊 [Sticker Zalo: {keyword}]",
+            SentAt = DateTime.UtcNow
+        };
+
+        if (conversation.Channel == ChannelType.ZaloPersonal)
+        {
+            var adapter = adapters.OfType<ZaloPersonalAdapter>().FirstOrDefault();
+            if (adapter is not null && adapter.IsConfigured)
+            {
+                try
+                {
+                    await adapter.SendStickerAsync(conversation, keyword);
+                    message.Status = MessageStatus.Sent;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Gửi sticker Zalo thất bại");
+                    message.Status = MessageStatus.Failed;
+                    message.Error = ex.Message;
+                }
+            }
+        }
+
+        db.Messages.Add(message);
+        conversation.LastMessageAt = message.SentAt;
+        conversation.LastMessagePreview = message.Text;
+        await db.SaveChangesAsync();
+        events.NotifyChanged();
+        return message;
+    }
+
     // ===== Lịch sử đặt hàng =====
 
     public async Task<List<Order>> GetOrdersAsync(int conversationId)
@@ -448,7 +488,7 @@ public class InboxService(
         return product;
     }
 
-    public async Task<List<Conversation>> GetConversationsAsync(ChannelType? channel = null, int? assignedStaffId = null)
+    public async Task<List<Conversation>> GetConversationsAsync(ChannelType? channel = null, int? assignedStaffId = null, string? searchQuery = null)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
         var query = db.Conversations.AsNoTracking();
@@ -456,6 +496,22 @@ public class InboxService(
             query = query.Where(c => c.Channel == channel);
         if (assignedStaffId is not null)
             query = query.Where(c => c.AssignedStaffId == assignedStaffId);
+
+        if (!string.IsNullOrWhiteSpace(searchQuery))
+        {
+            var q = searchQuery.Trim().ToLower();
+            var matchingConvIds = await db.Messages.AsNoTracking()
+                .Where(m => m.Text != null && m.Text.ToLower().Contains(q))
+                .Select(m => m.ConversationId)
+                .Distinct()
+                .ToListAsync();
+
+            query = query.Where(c =>
+                (c.CustomerName != null && c.CustomerName.ToLower().Contains(q)) ||
+                (c.CustomerPhone != null && c.CustomerPhone.Contains(q)) ||
+                matchingConvIds.Contains(c.Id));
+        }
+
         return await query.OrderByDescending(c => c.LastMessageAt).ToListAsync();
     }
 
@@ -591,6 +647,32 @@ public class InboxService(
             await db.SaveChangesAsync();
             events.NotifyChanged();
         }
+    }
+
+    public async Task ClearChannelDataAsync(ChannelType channel)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var convs = await db.Conversations
+            .Where(c => c.Channel == channel)
+            .ToListAsync();
+
+        if (convs.Count == 0) return;
+
+        var convIds = convs.Select(c => c.Id).ToList();
+
+        // 1. Xóa tất cả tin nhắn
+        var msgs = await db.Messages.Where(m => convIds.Contains(m.ConversationId)).ToListAsync();
+        db.Messages.RemoveRange(msgs);
+
+        // 2. Xóa các đơn hàng liên quan
+        var orders = await db.Orders.Where(o => convIds.Contains(o.ConversationId)).ToListAsync();
+        db.Orders.RemoveRange(orders);
+
+        // 3. Xóa tất cả hội thoại của kênh
+        db.Conversations.RemoveRange(convs);
+
+        await db.SaveChangesAsync();
+        events.NotifyChanged();
     }
 
     public bool IsChannelConfigured(ChannelType channel) =>

@@ -124,8 +124,8 @@ public class WebhooksController(
                 if (convId is int cid)
                 {
                     webhookLog.Add(channel, WebhookLogService.StatusSaved, $"{inbound.CustomerName}: {inbound.Text}");
-                    // Tin khách mới (không phải webhook trùng) và là tin văn bản → thử trả lời tự động theo kịch bản
-                    if (!string.IsNullOrWhiteSpace(inbound.Text))
+                    // Tin khách mới (không phải webhook trùng), là tin văn bản từ khách (Inbound) → thử trả lời tự động theo kịch bản
+                    if (!string.IsNullOrWhiteSpace(inbound.Text) && inbound.Direction == MessageDirection.Inbound)
                         _ = autoReply.TryAutoReplyAsync(cid, inbound.Text, baseUrl);
                 }
                 else

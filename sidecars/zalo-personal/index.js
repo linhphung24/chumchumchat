@@ -89,11 +89,17 @@ async function login() {
     }
 }
 
+function getThreadType(threadId) {
+    const s = String(threadId);
+    if (s.startsWith("g") || s.length > 15) return ThreadType.Group;
+    return ThreadType.User;
+}
+
 function startListener() {
     api.listener.on("message", async (message) => {
         try {
-            // Chỉ xử lý chat 1-1 với khách; bỏ qua nhóm và tin của chính mình
-            if (message.type !== ThreadType.User || message.isSelf) return;
+            // Hỗ trợ cả 1-1 (User) và Nhóm (Group)
+            if (message.type !== ThreadType.User && message.type !== ThreadType.Group) return;
 
             const data = message.data || {};
             let text = "";
@@ -102,21 +108,34 @@ function startListener() {
             if (typeof data.content === "string") {
                 text = data.content;
             } else if (data.content && typeof data.content === "object") {
-                // Tin ảnh/đính kèm: content là object có href/thumb
-                attachmentUrl = data.content.href || data.content.thumb || null;
-                text = data.content.title || "";
-                if (!attachmentUrl && !text) return; // sticker/loại chưa hỗ trợ
+                // Tin ảnh/đính kèm/sticker: content là object có href/thumb/url
+                attachmentUrl = data.content.href || data.content.thumb || data.content.spriteUrl || data.content.url || null;
+                text = data.content.title || (data.content.id ? "[Sticker Zalo]" : "");
+                if (!attachmentUrl && !text) text = "[Sticker Zalo]";
+            } else if (data.property && data.property.stickerId) {
+                text = "[Sticker Zalo]";
             } else {
                 return;
             }
 
+            const isGroup = message.type === ThreadType.Group;
+            const senderName = data.dName || "Thành viên";
+            const groupName = data.gName || data.groupName || (data.grid ? `Nhóm Zalo ${data.grid}` : "Nhóm Zalo");
+
+            // Với tin nhắn nhóm từ thành viên khác, thêm tiền tố [Tên người gửi]:
+            let formattedText = text;
+            if (isGroup && !message.isSelf && senderName) {
+                formattedText = `${senderName}: ${text}`;
+            }
+
             const payload = {
                 userId: String(message.threadId),
-                name: data.dName || "",
-                text,
+                name: isGroup ? `[Nhóm] ${groupName}` : (data.dName || ""),
+                text: formattedText,
                 msgId: data.msgId ? String(data.msgId) : null,
                 ts: data.ts ? Number(data.ts) : Date.now(),
                 attachmentUrl,
+                isOutbound: Boolean(message.isSelf),
             };
 
             const res = await fetch(`${CHUMCHAT_URL}/webhooks/zalopersonal`, {
@@ -133,7 +152,7 @@ function startListener() {
     api.listener.on("error", (err) => console.error("[zalo] Listener lỗi:", err));
     api.listener.start();
     loggedIn = true;
-    console.log(`[sidecar] Đang nghe tin nhắn Zalo, đẩy về ${CHUMCHAT_URL}/webhooks/zalopersonal`);
+    console.log(`[sidecar] Đang nghe tin nhắn Zalo (Cá nhân & Nhóm), đẩy về ${CHUMCHAT_URL}/webhooks/zalopersonal`);
 }
 
 // ===== HTTP server nhận lệnh gửi tin từ ChumChat =====
@@ -157,7 +176,59 @@ app.get("/health", (req, res) => {
             console.warn("Lỗi đọc file qr.png:", e.message);
         }
     }
-    res.json({ ok: true, loggedIn, qr: loggedIn ? null : qr });
+    let userId = null;
+    if (loggedIn && api) {
+        try {
+            const ctx = api.getContext();
+            userId = ctx?.uid || ctx?.userId || null;
+        } catch (e) {}
+    }
+    res.json({ ok: true, loggedIn, qr: loggedIn ? null : qr, userId });
+});
+
+app.get("/stickers", async (req, res) => {
+    const keyword = req.query.keyword || "hello";
+    if (!loggedIn) return res.status(503).json({ error: "Chưa đăng nhập Zalo" });
+    try {
+        const stickerIds = await api.getStickers(keyword);
+        if (!stickerIds || stickerIds.length === 0) return res.json({ stickers: [] });
+        const details = await Promise.all(
+            stickerIds.slice(0, 15).map(id => api.getStickersDetail(id).catch(() => null))
+        );
+        res.json({ stickers: details.filter(Boolean) });
+    } catch (err) {
+        console.error("[zalo] Lỗi lấy sticker:", err);
+        res.status(500).json({ error: String(err.message || err) });
+    }
+});
+
+app.post("/send-sticker", async (req, res) => {
+    const { threadId, keyword, stickerId } = req.body || {};
+    if (!loggedIn) return res.status(503).json({ error: "Chưa đăng nhập Zalo (quét QR trong log sidecar)" });
+    if (!threadId) return res.status(400).json({ error: "Thiếu threadId" });
+
+    try {
+        const type = getThreadType(threadId);
+        let targetStickerId = stickerId;
+
+        if (!targetStickerId && keyword) {
+            const stickerIds = await api.getStickers(keyword);
+            if (stickerIds && stickerIds.length > 0) {
+                targetStickerId = stickerIds[0];
+            }
+        }
+
+        if (!targetStickerId) {
+            return res.status(404).json({ error: "Không tìm thấy sticker phù hợp" });
+        }
+
+        const stickerObject = await api.getStickersDetail(targetStickerId);
+        await api.sendMessageSticker(stickerObject, String(threadId), type);
+        res.json({ ok: true });
+    } catch (err) {
+        console.error("[zalo] Gửi sticker lỗi:", err);
+        res.status(500).json({ error: String(err.message || err) });
+    }
 });
 
 app.post("/send", async (req, res) => {
@@ -165,7 +236,8 @@ app.post("/send", async (req, res) => {
     if (!loggedIn) return res.status(503).json({ error: "Chưa đăng nhập Zalo (quét QR trong log sidecar)" });
     if (!threadId || !text) return res.status(400).json({ error: "Thiếu threadId hoặc text" });
     try {
-        await api.sendMessage({ msg: text }, String(threadId), ThreadType.User);
+        const type = getThreadType(threadId);
+        await api.sendMessage({ msg: text }, String(threadId), type);
         res.json({ ok: true });
     } catch (err) {
         console.error("[zalo] Gửi tin lỗi:", err);
@@ -185,7 +257,8 @@ app.post("/send-image", async (req, res) => {
         const tmpFile = path.join(os.tmpdir(), `chumchat-${Date.now()}${ext}`);
         fs.writeFileSync(tmpFile, Buffer.from(await imgRes.arrayBuffer()));
         try {
-            await api.sendMessage({ msg: "", attachments: [tmpFile] }, String(threadId), ThreadType.User);
+            const type = getThreadType(threadId);
+            await api.sendMessage({ msg: "", attachments: [tmpFile] }, String(threadId), type);
         } finally {
             fs.unlinkSync(tmpFile);
         }
@@ -207,7 +280,8 @@ app.post("/send-file", async (req, res) => {
         const tmpFile = path.join(os.tmpdir(), `chumchat-${Date.now()}${ext}`);
         fs.writeFileSync(tmpFile, Buffer.from(await fileRes.arrayBuffer()));
         try {
-            await api.sendMessage({ msg: "", attachments: [tmpFile] }, String(threadId), ThreadType.User);
+            const type = getThreadType(threadId);
+            await api.sendMessage({ msg: "", attachments: [tmpFile] }, String(threadId), type);
         } finally {
             fs.unlinkSync(tmpFile);
         }

@@ -55,13 +55,16 @@ public class ZaloPersonalAdapter(
         if (root.TryGetProperty("ts", out var ts) && ts.TryGetInt64(out var unixMs))
             sentAt = DateTimeOffset.FromUnixTimeMilliseconds(unixMs).UtcDateTime;
 
+        var isOutbound = root.TryGetProperty("isOutbound", out var ob) && ob.GetBoolean();
+
         return [new InboundMessage(
             userId,
             name,
             text,
             root.TryGetProperty("msgId", out var mi) ? mi.GetString() : null,
             sentAt,
-            attachmentUrl)];
+            attachmentUrl,
+            Direction: isOutbound ? MessageDirection.Outbound : MessageDirection.Inbound)];
     }
 
     public Task<string?> SendTextAsync(Conversation conversation, string text, CancellationToken ct = default) =>
@@ -72,6 +75,9 @@ public class ZaloPersonalAdapter(
 
     public Task<string?> SendFileAsync(Conversation conversation, string fileUrl, byte[] fileBytes, string fileName, string mimeType, CancellationToken ct = default) =>
         PostToSidecarAsync("/send-file", new { threadId = conversation.ExternalId, url = fileUrl, fileName }, ct);
+
+    public Task<string?> SendStickerAsync(Conversation conversation, string keywordOrStickerId, CancellationToken ct = default) =>
+        PostToSidecarAsync("/send-sticker", new { threadId = conversation.ExternalId, keyword = keywordOrStickerId }, ct);
 
     private async Task<string?> PostToSidecarAsync(string path, object payload, CancellationToken ct)
     {
@@ -100,7 +106,7 @@ public class ZaloPersonalAdapter(
     }
 
     public Task<IReadOnlyList<HistoryMessage>> FetchHistoryAsync(int maxConversations, CancellationToken ct = default) =>
-        throw new NotSupportedException("Zalo cá nhân chưa hỗ trợ đồng bộ tin cũ — chỉ nhận tin mới qua sidecar");
+        Task.FromResult<IReadOnlyList<HistoryMessage>>(Array.Empty<HistoryMessage>());
 
     // Sidecar đã gửi kèm tên hiển thị trong payload; chưa lấy avatar riêng
     public Task<CustomerProfile?> FetchProfileAsync(string externalId, CancellationToken ct = default) =>

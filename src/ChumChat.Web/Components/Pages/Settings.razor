@@ -18,10 +18,44 @@
 
 <PageTitle>Cấu hình hệ thống — ChumChat</PageTitle>
 
+<div class="settings-page-wrapper">
+    <!-- ===== TOP NAVIGATION HEADER BAR ===== -->
+    <header class="main-top-navbar" style="background: #ffffff; border-bottom: 1px solid #e5e7eb; padding: 0 16px; height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.03); margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <h1 style="margin: 0; font-size: 1.25rem; font-weight: 800; background: linear-gradient(135deg, #2563eb, #7c3aed); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">ChumChat</h1>
+            <span style="font-size: 11px; background: #f3f4f6; color: #374151; font-weight: 600; padding: 2px 8px; border-radius: 12px; border: 1px solid #e5e7eb;">⚙️ Cấu hình hệ thống</span>
+        </div>
+
+        <nav style="display: flex; align-items: center; gap: 6px;">
+            <a href="/" class="top-nav-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #f9fafb; color: #374151; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #e5e7eb;">
+                <span>💬</span> <span>Hộp Thư</span>
+            </a>
+            <a href="/thuc-don" class="top-nav-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #f9fafb; color: #374151; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #e5e7eb;">
+                <span>🍔</span> <span>Thực Đơn iPOS</span>
+            </a>
+            <a href="/tro-ly-ai" class="top-nav-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #f9fafb; color: #374151; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #e5e7eb;">
+                <span>✨</span> <span>Trợ Lý AI</span>
+            </a>
+            <a href="/simulator" class="top-nav-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #f9fafb; color: #374151; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #e5e7eb;">
+                <span>🧪</span> <span>Giả Lập Chat</span>
+            </a>
+            <a href="/settings" class="top-nav-btn active" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #eff6ff; color: #1d4ed8; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #bfdbfe;">
+                <span>⚙️</span> <span>Cấu Hình</span>
+            </a>
+        </nav>
+
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <button type="button" @onclick="ToggleAiAutoReplyAsync" title="@(Store.Ai.IsAutoReplyEnabled ? "Click để TẮT AI Tự động trả lời & chốt đơn" : "Click để BẬT AI Tự động trả lời & chốt đơn")" style="display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 20px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s ease; @(Store.Ai.IsAutoReplyEnabled ? "background: #dcfce7; color: #15803d; border: 1px solid #86efac; box-shadow: 0 1px 3px rgba(22,101,52,0.12);" : "background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5;")">
+                <span style="width: 8px; height: 8px; border-radius: 50%; background: @(Store.Ai.IsAutoReplyEnabled ? "#16a34a" : "#dc2626"); display: inline-block;"></span>
+                <span>🤖 AI AutoPilot: @(Store.Ai.IsAutoReplyEnabled ? "BẬT" : "TẮT")</span>
+            </button>
+            <a href="/" class="btn-back" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 6px; background: #f3f4f6; color: #374151; text-decoration: none; font-size: 12px; font-weight: 600;">← Về Hộp Thư</a>
+        </div>
+    </header>
+
 <div class="settings dashboard-mode">
     <div class="settings-header">
         <h1>⚙ Cấu hình hệ thống</h1>
-        <a href="/">← Về Hộp thư</a>
     </div>
 
     @if (banner is not null)
@@ -610,37 +644,84 @@
                     }
                     else if (modalPlatform == "zalopersonal")
                     {
-                        <div class="platform-header">
-                            <h3>Zalo Cá Nhân (Sidecar)</h3>
-                            @if (!string.IsNullOrEmpty(zaloPersonal.ApiKey))
+                        <div class="pancake-zalo-connect-card" style="max-width: 440px; margin: 0 auto; text-align: center; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+                            <!-- Header / Logo Zalo chuẩn Pancake -->
+                            <div style="margin-bottom: 16px;">
+                                <div style="font-size: 32px; font-weight: 900; color: #0068ff; letter-spacing: -0.5px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+                                    <span>Zalo</span>
+                                </div>
+                                <p style="margin: 4px 0 0 0; font-size: 13px; color: #6b7280; font-weight: 500;">Kết nối tài khoản Zalo Cá Nhân</p>
+                            </div>
+
+                            @if (syncing)
                             {
-                                <span class="status-badge connected">Đã cấu hình@(string.IsNullOrEmpty(zaloPersonal.AccountName) ? "" : $": {zaloPersonal.AccountName}")</span>
+                                <div style="padding: 24px 16px; background: #f8fafc; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 16px;">
+                                    <div style="font-size: 24px; margin-bottom: 8px;">⏳</div>
+                                    <p style="font-size: 14px; font-weight: 600; color: #2563eb; margin: 0;">Đang khởi tạo mã QR đăng nhập Zalo...</p>
+                                    <p style="font-size: 12px; color: #64748b; margin: 4px 0 0 0;">Vui lòng chờ khoảng 3 – 5 giây</p>
+                                </div>
+                            }
+                            else if (zaloQr is not null)
+                            {
+                                <!-- Khung Mã QR chuẩn Pancake -->
+                                <div style="background: white; border-radius: 16px; border: 1px solid #e5e7eb; padding: 16px; display: inline-block; box-shadow: 0 4px 16px rgba(0,0,0,0.06); margin-bottom: 12px;">
+                                    <img src="@zaloQr" alt="Mã QR Zalo" style="width: 210px; height: 210px; display: block; border-radius: 8px;" />
+                                </div>
+
+                                <!-- Countdown Timer & làm mới QR -->
+                                <div style="margin-bottom: 16px; font-size: 13px; color: #4b5563;">
+                                    <div>QR hết hạn sau: <span style="color: #2563eb; font-weight: 700;">180s</span></div>
+                                    <button type="button" @onclick="RestartZaloPersonalSidecar" style="background: none; border: none; color: #2563eb; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: underline; margin-top: 4px; display: inline-flex; align-items: center; gap: 4px;">
+                                        ⟳ Làm mới QR
+                                    </button>
+                                </div>
                             }
                             else
                             {
-                                <span class="status-badge disconnected">Chưa cấu hình</span>
+                                <!-- Nút Bật khi chưa có QR -->
+                                <div style="padding: 20px 16px; background: #f8fafc; border-radius: 16px; border: 1px dashed #cbd5e1; margin-bottom: 16px;">
+                                    <p style="margin: 0 0 12px 0; font-size: 13px; color: #475569; font-weight: 500;">Bấm nút bên dưới để khởi tạo mã QR kết nối Zalo</p>
+                                    <button type="button" class="btn-sync" @onclick="ConnectZaloPersonal" style="width: 100%; padding: 10px 18px; border-radius: 10px; background: #0068ff; color: white; border: none; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 0 2px 8px rgba(0,104,255,0.25);">
+                                        📲 Bật Zalo Cá Nhân & Lấy mã QR
+                                    </button>
+                                </div>
                             }
-                        </div>
-                        <details class="guide">
-                            <summary>📖 Hướng dẫn tự động</summary>
-                            <p>Hệ thống ChumChat sẽ tự động khởi tạo tiến trình Node.js (Sidecar) ngầm để phục vụ bạn. Quá trình bật lần đầu có thể mất vài giây.</p>
-                        </details>
-                        <div class="actions">
-                            <button class="btn-sync" @onclick="ConnectZaloPersonal" disabled="@syncing">
-                                @(syncing ? "Đang khởi động..." : "Bật Zalo Cá Nhân & Lấy mã QR")
-                            </button>
-                            @if (!string.IsNullOrEmpty(zaloPersonal.ApiKey))
+
+                            @if (banner is not null)
                             {
-                                <button class="btn-disconnect" @onclick="DisconnectZaloPersonal">Tắt kết nối</button>
+                                <div style="margin-bottom: 16px; padding: 10px 14px; border-radius: 10px; font-size: 12px; font-weight: 600; text-align: left; @(bannerIsError ? "background: #fef2f2; color: #991b1b; border: 1px solid #fecaca;" : "background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0;")">
+                                    @banner
+                                </div>
                             }
-                        </div>
-                        @if (zaloQr is not null)
-                        {
-                            <div class="qr-box" style="margin-top: 20px; text-align: center;">
-                                <p><b>Quét mã này bằng Zalo trên điện thoại:</b></p>
-                                <img class="qr-img" src="@zaloQr" alt="Mã QR đăng nhập Zalo" style="width: 250px; border: 1px solid #ccc; border-radius: 8px; margin-top: 10px;" />
+
+                            <!-- Hướng dẫn quét QR chuẩn Pancake -->
+                            <div style="text-align: left; background: #ffffff; border: 1px solid #e2e8f0; padding: 16px; border-radius: 14px; margin-bottom: 16px;">
+                                <h4 style="margin: 0 0 10px 0; font-size: 14px; font-weight: 700; color: #1e293b;">Hướng dẫn quét QR</h4>
+                                <ol style="margin: 0; padding-left: 20px; font-size: 13px; color: #475569; line-height: 1.6;">
+                                    <li>Mở app <b>Zalo</b> trên điện thoại</li>
+                                    <li>Nhấn <b>Tin nhắn</b>, chọn biểu tượng <b>QR 🔳</b></li>
+                                    <li>Quét mã trên để đăng nhập tài khoản</li>
+                                    <li style="color: #2563eb; font-weight: 700; margin-top: 6px;">☑ Tích chọn <i>"Đồng bộ tin nhắn sang thiết bị này"</i> trên điện thoại khi Zalo hỏi để tải toàn bộ lịch sử tin nhắn cũ sang ChumChat.</li>
+                                </ol>
+                                
+                                <p style="margin: 12px 0 0 0; font-size: 11px; color: #94a3b8; line-height: 1.5; border-top: 1px solid #f1f5f9; padding-top: 10px;">
+                                    Sau khi đăng nhập Zalo trên ChumChat, bạn vui lòng không quét đăng nhập lại trên Zalo phiên bản Web để tránh làm gián đoạn luồng tin nhắn đồng bộ về ChumChat.
+                                </p>
                             </div>
-                        }
+
+                            <!-- Nút hành động ở cuối -->
+                            <div style="display: flex; gap: 10px;">
+                                <button type="button" @onclick="CloseModal" style="flex: 1; padding: 10px; border-radius: 10px; background: #f1f5f9; color: #334155; border: none; font-size: 13px; font-weight: 600; cursor: pointer;">
+                                    Quay trở lại trang chủ
+                                </button>
+                                @if (!string.IsNullOrEmpty(zaloPersonal.ApiKey))
+                                {
+                                    <button type="button" @onclick="DisconnectZaloPersonal" style="padding: 10px 16px; border-radius: 10px; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; font-size: 13px; font-weight: 600; cursor: pointer;">
+                                        Tắt kết nối
+                                    </button>
+                                }
+                            </div>
+                        </div>
                     }
 
                     else if (modalPlatform == "messengerpersonal")
@@ -761,8 +842,17 @@
         </div>
     </div>
 }
+</div>
 
 @code {
+    private async Task ToggleAiAutoReplyAsync()
+    {
+        Store.Ai.IsAutoReplyEnabled = !Store.Ai.IsAutoReplyEnabled;
+        await Store.SaveAiAsync(Store.Ai);
+        banner = Store.Ai.IsAutoReplyEnabled ? "✔ Đã BẬT AI tự động trả lời & chốt đơn!" : "⏸️ Đã TẮT AI tự động trả lời!";
+        bannerIsError = false;
+        StateHasChanged();
+    }
     private string activeTab = "channels";
     private bool showChannelModal = false;
     private string modalPlatform = "zalo";
@@ -807,17 +897,52 @@
         showChannelModal = true;
     }
 
+    private bool isZaloConnected;
+    private bool isPollingZaloQr;
+
     private void OpenConfigModal(string platform)
     {
         isEditing = true;
         modalPlatform = platform;
         showChannelModal = true;
+        if (platform == "zalopersonal")
+        {
+            _ = CheckZaloPersonalSidecar();
+            StartZaloQrPollingAsync();
+        }
     }
 
     private void CloseModal()
     {
         showChannelModal = false;
         zaloQr = null;
+        isPollingZaloQr = false;
+    }
+
+    private void StartZaloQrPollingAsync()
+    {
+        if (isPollingZaloQr) return;
+        isPollingZaloQr = true;
+        _ = Task.Run(async () =>
+        {
+            while (isPollingZaloQr && showChannelModal && modalPlatform == "zalopersonal")
+            {
+                await Task.Delay(2000);
+                if (!isPollingZaloQr || !showChannelModal || modalPlatform != "zalopersonal") break;
+
+                await InvokeAsync(async () =>
+                {
+                    await CheckZaloPersonalSidecar(silent: true);
+                    StateHasChanged();
+                });
+
+                if (isZaloConnected)
+                {
+                    break;
+                }
+            }
+            isPollingZaloQr = false;
+        });
     }
 
     private ChannelType GetChannelType(string platform) => platform switch
@@ -963,15 +1088,26 @@
     private async Task ConnectZaloPersonal()
     {
         syncing = true;
+        banner = "Đang khởi động Zalo Sidecar và khởi tạo mã QR...";
+        bannerIsError = false;
+        zaloQr = null;
         StateHasChanged();
         
         await Store.SaveZaloPersonalAsync(Clone(zaloPersonal));
         await SidecarManager.EnsureZaloSidecarRunningAsync();
         zaloPersonal = Clone(Store.ZaloPersonal);
 
-        await Task.Delay(2000); // Đợi sidecar lên
-        await CheckZaloPersonalSidecar();
+        for (int attempt = 1; attempt <= 6; attempt++)
+        {
+            await Task.Delay(1000);
+            await CheckZaloPersonalSidecar();
+            if (zaloQr != null || isZaloConnected)
+            {
+                break;
+            }
+        }
         
+        StartZaloQrPollingAsync();
         syncing = false;
         StateHasChanged();
     }
@@ -1110,44 +1246,61 @@
         }
     }
 
-    private async Task CheckZaloPersonalSidecar()
+    private async Task CheckZaloPersonalSidecar(bool silent = false)
     {
-        syncing = true;
-        banner = null;
-        zaloQr = null;
-        StateHasChanged();
+        if (!silent)
+        {
+            syncing = true;
+            banner = null;
+            StateHasChanged();
+        }
+
         try
         {
             var client = HttpFactory.CreateClient();
-            client.Timeout = TimeSpan.FromSeconds(5);
+            client.Timeout = TimeSpan.FromSeconds(4);
             var body = await client.GetStringAsync(zaloPersonal.SidecarUrl.TrimEnd('/') + "/health");
             using var doc = System.Text.Json.JsonDocument.Parse(body);
             var loggedIn = doc.RootElement.TryGetProperty("loggedIn", out var li) && li.GetBoolean();
             if (loggedIn)
             {
-                banner = "✔ Sidecar đang chạy và ĐÃ đăng nhập Zalo — sẵn sàng nhận tin";
+                isZaloConnected = true;
+                zaloQr = null;
+                banner = "✔ Kết nối thành công! Tài khoản Zalo Cá Nhân đang hoạt động.";
                 bannerIsError = false;
             }
             else if (doc.RootElement.TryGetProperty("qr", out var qr) && qr.ValueKind == System.Text.Json.JsonValueKind.String)
             {
+                isZaloConnected = false;
                 zaloQr = qr.GetString();
-                banner = "⚠ Chưa đăng nhập — quét mã QR bên dưới bằng Zalo trên điện thoại";
-                bannerIsError = true;
+                if (!silent)
+                {
+                    banner = "⚠ Chưa đăng nhập — mở Zalo trên điện thoại quét mã QR bên dưới";
+                    bannerIsError = true;
+                }
             }
             else
             {
-                banner = "⚠ Sidecar đang chạy nhưng chưa có mã QR (có thể đang khởi động) — chờ vài giây rồi bấm lại";
-                bannerIsError = true;
+                isZaloConnected = false;
+                if (!silent)
+                {
+                    banner = "⚠ Sidecar đang chạy nhưng chưa có mã QR (đang khởi tạo) — chờ vài giây...";
+                    bannerIsError = true;
+                }
             }
         }
         catch (Exception ex)
         {
-            banner = $"✕ Không gọi được sidecar tại {zaloPersonal.SidecarUrl} — sidecar chưa chạy? ({ex.Message})";
-            bannerIsError = true;
+            isZaloConnected = false;
+            if (!silent)
+            {
+                banner = $"✕ Không gọi được sidecar tại {zaloPersonal.SidecarUrl} ({ex.Message})";
+                bannerIsError = true;
+            }
         }
         finally
         {
-            syncing = false;
+            if (!silent) syncing = false;
         }
     }
 
@@ -1206,9 +1359,18 @@
 
     private async Task DisconnectZaloPersonal()
     {
+        syncing = true;
+        banner = "Đang ngắt kết nối và xóa toàn bộ dữ liệu tin nhắn Zalo Cá Nhân...";
+        bannerIsError = false;
+        StateHasChanged();
+
         await SidecarManager.StopZaloSidecarAsync();
+        await Inbox.ClearChannelDataAsync(ChannelType.ZaloPersonal);
+
         zaloPersonal = Clone(Store.ZaloPersonal);
         zaloQr = null;
+        isZaloConnected = false;
+        syncing = false;
         CloseModal();
     }
 

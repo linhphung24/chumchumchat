@@ -30,11 +30,14 @@ ssh "${VpsUser}@${VpsIp}" "systemctl stop chumchat"
 Write-Host ">>> Uploading .NET App... (Yêu cầu nhập password lần 2: Copy file)" -ForegroundColor Yellow
 scp -r .\publish\* "${VpsUser}@${VpsIp}:${TargetDir}/"
 
-Write-Host ">>> Uploading Sidecars (Zalo & Messenger)... (Yêu cầu nhập password lần 2)" -ForegroundColor Yellow
+Write-Host ">>> Uploading Sidecars (Zalo & Messenger)..." -ForegroundColor Yellow
 ssh "${VpsUser}@${VpsIp}" "mkdir -p ${TargetDir}/sidecars"
 scp -r .\sidecars\* "${VpsUser}@${VpsIp}:${TargetDir}/sidecars/"
 
-Write-Host "`n[4/4] Setting permissions and restarting services on VPS... (Yêu cầu nhập password lần 3)" -ForegroundColor Yellow
+Write-Host ">>> Installing/rebuilding Linux npm dependencies for Sidecars on VPS..." -ForegroundColor Yellow
+ssh "${VpsUser}@${VpsIp}" "cd ${TargetDir}/sidecars/zalo-personal && rm -rf node_modules package-lock.json && npm install --production && cd ${TargetDir}/sidecars/messenger-personal && rm -rf node_modules package-lock.json && npm install --production"
+
+Write-Host "`n[4/4] Setting permissions and restarting services on VPS..." -ForegroundColor Yellow
 ssh "${VpsUser}@${VpsIp}" "chown -R chumchat:chumchat ${TargetDir} && chmod +x ${TargetDir}/ChumChat.Web && systemctl daemon-reload && systemctl restart chumchat"
 
 Write-Host "`n==========================================" -ForegroundColor Green

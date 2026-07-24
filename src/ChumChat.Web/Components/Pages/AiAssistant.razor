@@ -12,10 +12,44 @@
 
 <PageTitle>Trợ lý AI — ChumChat</PageTitle>
 
+<div class="ai-assistant-page-wrapper">
+    <!-- ===== TOP NAVIGATION HEADER BAR ===== -->
+    <header class="main-top-navbar" style="background: #ffffff; border-bottom: 1px solid #e5e7eb; padding: 0 16px; height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.03); margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <h1 style="margin: 0; font-size: 1.25rem; font-weight: 800; background: linear-gradient(135deg, #2563eb, #7c3aed); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">ChumChat</h1>
+            <span style="font-size: 11px; background: #fef3c7; color: #92400e; font-weight: 600; padding: 2px 8px; border-radius: 12px; border: 1px solid #fde68a;">✨ Trợ lý AI</span>
+        </div>
+
+        <nav style="display: flex; align-items: center; gap: 6px;">
+            <a href="/" class="top-nav-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #f9fafb; color: #374151; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #e5e7eb;">
+                <span>💬</span> <span>Hộp Thư</span>
+            </a>
+            <a href="/thuc-don" class="top-nav-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #f9fafb; color: #374151; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #e5e7eb;">
+                <span>🍔</span> <span>Thực Đơn iPOS</span>
+            </a>
+            <a href="/tro-ly-ai" class="top-nav-btn active" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #eff6ff; color: #1d4ed8; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #bfdbfe;">
+                <span>✨</span> <span>Trợ Lý AI</span>
+            </a>
+            <a href="/simulator" class="top-nav-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #f9fafb; color: #374151; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #e5e7eb;">
+                <span>🧪</span> <span>Giả Lập Chat</span>
+            </a>
+            <a href="/settings" class="top-nav-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #f9fafb; color: #374151; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #e5e7eb;">
+                <span>⚙️</span> <span>Cấu Hình</span>
+            </a>
+        </nav>
+
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <button type="button" @onclick="ToggleAiAutoReplyAsync" title="@(ai.IsAutoReplyEnabled ? "Click để TẮT AI Tự động trả lời & chốt đơn" : "Click để BẬT AI Tự động trả lời & chốt đơn")" style="display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 20px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s ease; @(ai.IsAutoReplyEnabled ? "background: #dcfce7; color: #15803d; border: 1px solid #86efac; box-shadow: 0 1px 3px rgba(22,101,52,0.12);" : "background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5;")">
+                <span style="width: 8px; height: 8px; border-radius: 50%; background: @(ai.IsAutoReplyEnabled ? "#16a34a" : "#dc2626"); display: inline-block;"></span>
+                <span>🤖 AI AutoPilot: @(ai.IsAutoReplyEnabled ? "BẬT" : "TẮT")</span>
+            </button>
+            <a href="/" class="btn-back" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 6px; background: #f3f4f6; color: #374151; text-decoration: none; font-size: 12px; font-weight: 600;">← Về Hộp Thư</a>
+        </div>
+    </header>
+
 <div class="settings">
     <div class="settings-header">
-        <h1>✨ Trợ lý AI</h1>
-        <a href="/">← Về Hộp thư</a>
+        <h1>✨ Cấu hình Trợ lý AI</h1>
     </div>
 
     @if (banner is not null)
@@ -304,6 +338,7 @@
             <p class="modal-error">✕ @ruleError</p>
         }
     </section>
+</div>
 </div>
 
 @code {
@@ -619,6 +654,15 @@
     {
         await AutoReply.DeleteAsync(id);
         rules = await AutoReply.GetAllAsync();
+    }
+
+    private async Task ToggleAiAutoReplyAsync()
+    {
+        ai.IsAutoReplyEnabled = !ai.IsAutoReplyEnabled;
+        await Store.SaveAiAsync(ai);
+        banner = ai.IsAutoReplyEnabled ? "✔ Đã BẬT AI tự động trả lời & chốt đơn!" : "⏸️ Đã TẮT AI tự động trả lời!";
+        bannerIsError = false;
+        StateHasChanged();
     }
 
     private static T Clone<T>(T source) =>

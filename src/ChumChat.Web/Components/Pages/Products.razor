@@ -6,6 +6,7 @@
 @using Microsoft.EntityFrameworkCore
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject IposSyncService IposSync
+@inject ChannelSettingsStore Store
 
 <PageTitle>Quản lý Thực Đơn iPOS & Tồn Kho - ChumChat</PageTitle>
 
@@ -35,7 +36,13 @@
             </a>
         </nav>
 
-        <a href="/" class="btn-back" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 6px; background: #f3f4f6; color: #374151; text-decoration: none; font-size: 12px; font-weight: 600;">← Về Hộp Thư</a>
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <button type="button" @onclick="ToggleAiAutoReplyAsync" title="@(Store.Ai.IsAutoReplyEnabled ? "Click để TẮT AI Tự động trả lời & chốt đơn" : "Click để BẬT AI Tự động trả lời & chốt đơn")" style="display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 20px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s ease; @(Store.Ai.IsAutoReplyEnabled ? "background: #dcfce7; color: #15803d; border: 1px solid #86efac; box-shadow: 0 1px 3px rgba(22,101,52,0.12);" : "background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5;")">
+                <span style="width: 8px; height: 8px; border-radius: 50%; background: @(Store.Ai.IsAutoReplyEnabled ? "#16a34a" : "#dc2626"); display: inline-block;"></span>
+                <span>🤖 AI AutoPilot: @(Store.Ai.IsAutoReplyEnabled ? "BẬT" : "TẮT")</span>
+            </button>
+            <a href="/" class="btn-back" style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 6px; background: #f3f4f6; color: #374151; text-decoration: none; font-size: 12px; font-weight: 600;">← Về Hộp Thư</a>
+        </div>
     </header>
 
     <div class="products-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
@@ -793,6 +800,13 @@
 
     private bool showAddModal = false;
     private Product newProduct = new() { StockQuantity = 999, IsActive = true };
+
+    private async Task ToggleAiAutoReplyAsync()
+    {
+        Store.Ai.IsAutoReplyEnabled = !Store.Ai.IsAutoReplyEnabled;
+        await Store.SaveAiAsync(Store.Ai);
+        StateHasChanged();
+    }
 
     protected override async Task OnInitializedAsync()
     {

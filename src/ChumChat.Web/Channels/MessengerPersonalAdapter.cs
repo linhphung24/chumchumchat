@@ -100,7 +100,7 @@ public class MessengerPersonalAdapter(
     }
 
     public Task<IReadOnlyList<HistoryMessage>> FetchHistoryAsync(int maxConversations, CancellationToken ct = default) =>
-        throw new NotSupportedException("Messenger cá nhân chưa hỗ trợ đồng bộ tin cũ — chỉ nhận tin mới qua sidecar");
+        Task.FromResult<IReadOnlyList<HistoryMessage>>(Array.Empty<HistoryMessage>());
 
     public Task<CustomerProfile?> FetchProfileAsync(string externalId, CancellationToken ct = default) =>
         Task.FromResult<CustomerProfile?>(null);

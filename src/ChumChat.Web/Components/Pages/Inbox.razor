@@ -2,6 +2,7 @@
 @attribute [Authorize]
 @rendermode InteractiveServer
 @using System.Text.Json
+@using ChumChat.Web.Channels
 @using ChumChat.Web.Data
 @using ChumChat.Web.Services
 @inject InboxService InboxSvc
@@ -17,6 +18,7 @@
 @inject PushNotificationService PushSvc
 @inject ChannelSettingsStore Store
 @inject LalamoveService LalamoveSvc
+@inject IEnumerable<IChannelAdapter> Adapters
 @implements IDisposable
 
 <PageTitle>ChumChat — Hộp thư hợp nhất</PageTitle>
@@ -56,6 +58,16 @@
 
         <!-- User Profile & Tool Actions -->
         <div style="display: flex; align-items: center; gap: 8px;">
+            <button type="button" @onclick="SyncAllChannelsMessagesAsync" disabled="@isSyncingMessages" title="Tải tin nhắn mới nhất từ tất cả các kênh" style="display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; transition: all 0.2s ease;">
+                <span>⟳</span> <span>@(isSyncingMessages ? "Đang đồng bộ..." : "Đồng bộ tin nhắn")</span>
+            </button>
+            @if (isAdmin)
+            {
+                <button type="button" @onclick="ToggleAiAutoReplyAsync" title="@(Store.Ai.IsAutoReplyEnabled ? "Click để TẮT AI Tự động trả lời & chốt đơn" : "Click để BẬT AI Tự động trả lời & chốt đơn")" style="display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 20px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s ease; @(Store.Ai.IsAutoReplyEnabled ? "background: #dcfce7; color: #15803d; border: 1px solid #86efac; box-shadow: 0 1px 3px rgba(22,101,52,0.12);" : "background: #fef2f2; color: #b91c1c; border: 1px solid #fca5a5;")">
+                    <span style="width: 8px; height: 8px; border-radius: 50%; background: @(Store.Ai.IsAutoReplyEnabled ? "#16a34a" : "#dc2626"); display: inline-block;"></span>
+                    <span>🤖 AI AutoPilot: @(Store.Ai.IsAutoReplyEnabled ? "BẬT" : "TẮT")</span>
+                </button>
+            }
             <span style="font-size: 12px; font-weight: 600; color: #374151; background: #f3f4f6; padding: 4px 10px; border-radius: 12px; border: 1px solid #e5e7eb;" title="Tài khoản đang đăng nhập">
                 👤 @currentStaffName
             </span>
@@ -66,6 +78,13 @@
             <a href="/account/logout" title="Đăng xuất" style="display: inline-flex; align-items: center; justify-content: center; height: 32px; padding: 0 12px; border-radius: 6px; background: #fef2f2; color: #dc2626; text-decoration: none; font-size: 12px; font-weight: 700; border: 1px solid #fecaca;">🚪 Đăng xuất</a>
         </div>
     </header>
+
+    @if (!string.IsNullOrEmpty(syncStatusMessage))
+    {
+        <div style="background: #eff6ff; color: #1e40af; border-bottom: 1px solid #bfdbfe; padding: 6px 16px; font-size: 13px; font-weight: 600; text-align: center; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <span>ℹ️</span> <span>@syncStatusMessage</span>
+        </div>
+    }
 
     <div class="inbox @(selected is not null ? "has-selection" : "") @(mobileShowCustomerPanel ? "show-info-drawer" : "")" style="flex: 1; height: calc(100vh - 52px); overflow: hidden;">
         <aside class="conversation-list">
@@ -99,6 +118,32 @@
                     }
                 </select>
             </div>
+
+            <!-- Dòng 4: Ô Tìm kiếm theo Tên khách hoặc Nội dung tin nhắn -->
+            <div style="position: relative; width: 100%;">
+                <input type="text"
+                       placeholder="🔍 Tìm tên khách hoặc nội dung tin..."
+                       @bind="searchQuery"
+                       @bind:event="oninput"
+                       @onkeyup="OnSearchKeyUp"
+                       style="width: 100%; padding: 6px 54px 6px 10px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 12px; color: #0f172a; outline: none; background: #ffffff;" />
+                
+                @if (!string.IsNullOrWhiteSpace(searchQuery))
+                {
+                    <button type="button" @onclick="ClearSearchAsync" style="position: absolute; right: 36px; top: 50%; transform: translateY(-50%); border: none; background: none; color: #64748b; cursor: pointer; font-size: 13px; font-weight: 700; padding: 2px;">✕</button>
+                }
+                <button type="button" @onclick="PerformSearchAsync" style="position: absolute; right: 4px; top: 50%; transform: translateY(-50%); border: none; background: #2563eb; color: white; border-radius: 6px; padding: 3px 8px; font-size: 11px; font-weight: 700; cursor: pointer;">
+                    Tìm
+                </button>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(activeSearchQuery))
+            {
+                <div style="display: flex; align-items: center; justify-content: space-between; background: #eff6ff; border: 1px solid #bfdbfe; padding: 4px 8px; border-radius: 6px; font-size: 11px; color: #1e40af; font-weight: 600;">
+                    <span>🔍 Kết quả cho: "<b>@activeSearchQuery</b>" (@conversations.Count)</span>
+                    <button type="button" @onclick="ClearSearchAsync" style="border: none; background: none; color: #2563eb; cursor: pointer; font-size: 11px; font-weight: 700; text-decoration: underline;">Xóa tìm</button>
+                </div>
+            }
         </div>
 
         @if (conversations.Count == 0)
@@ -184,6 +229,12 @@
                         <option value="@s.Id">@s.DisplayName</option>
                     }
                 </select>
+
+                <button type="button" class="sync-chat-btn" title="Tải lại tin nhắn mới nhất của kênh này"
+                        @onclick="SyncCurrentChannelMessagesAsync" disabled="@isSyncingMessages"
+                        style="display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 6px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s ease;">
+                    <span>⟳</span> <span>@(isSyncingMessages ? "Đang đồng bộ..." : "Đồng bộ")</span>
+                </button>
 
                 <button class="trello-btn" title="Tạo thẻ Trello từ hội thoại này (khi chốt đơn xong)"
                         @onclick="OpenTrelloModal">
@@ -284,6 +335,12 @@
                     📎
                     <InputFile OnChange="OnImageSelected" accept="image/*" disabled="@sending" />
                 </label>
+                @if (selected?.Channel == ChannelType.ZaloPersonal)
+                {
+                    <button type="button" @onclick="ToggleStickerPicker" class="attach-btn" title="Gửi Sticker Zalo" style="border: none; background: none; font-size: 18px; cursor: pointer; padding: 4px;">
+                        😊
+                    </button>
+                }
                 <textarea @bind="draft" @bind:event="oninput" @onkeydown="OnComposerKeyDown"
                           placeholder="Nhập tin trả lời… (Enter để gửi, Shift+Enter xuống dòng)"
                           disabled="@sending"></textarea>
@@ -291,6 +348,24 @@
                     @(sending ? "Đang gửi…" : "Gửi")
                 </button>
             </footer>
+
+            @if (showStickerPicker && selected?.Channel == ChannelType.ZaloPersonal)
+            {
+                <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; margin: 8px 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: flex; flex-direction: column; gap: 8px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 700; color: #1e293b;">
+                        <span>😊 Gửi Sticker Zalo Nhanh</span>
+                        <button type="button" @onclick="ToggleStickerPicker" style="border: none; background: none; color: #64748b; cursor: pointer;">✕</button>
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                        <button type="button" @onclick='() => SendStickerAsync("hello")' style="padding: 6px 12px; border-radius: 6px; border: 1px solid #cbd5e1; background: #f8fafc; font-size: 12px; font-weight: 600; cursor: pointer;">👋 Xin chào</button>
+                        <button type="button" @onclick='() => SendStickerAsync("like")' style="padding: 6px 12px; border-radius: 6px; border: 1px solid #cbd5e1; background: #f8fafc; font-size: 12px; font-weight: 600; cursor: pointer;">👍 Thích / Ok</button>
+                        <button type="button" @onclick='() => SendStickerAsync("love")' style="padding: 6px 12px; border-radius: 6px; border: 1px solid #cbd5e1; background: #f8fafc; font-size: 12px; font-weight: 600; cursor: pointer;">❤️ Yêu thương</button>
+                        <button type="button" @onclick='() => SendStickerAsync("cảm ơn")' style="padding: 6px 12px; border-radius: 6px; border: 1px solid #cbd5e1; background: #f8fafc; font-size: 12px; font-weight: 600; cursor: pointer;">🙏 Cảm ơn</button>
+                        <button type="button" @onclick='() => SendStickerAsync("bye")' style="padding: 6px 12px; border-radius: 6px; border: 1px solid #cbd5e1; background: #f8fafc; font-size: 12px; font-weight: 600; cursor: pointer;">🙋 Tạm biệt</button>
+                        <button type="button" @onclick='() => SendStickerAsync("haha")' style="padding: 6px 12px; border-radius: 6px; border: 1px solid #cbd5e1; background: #f8fafc; font-size: 12px; font-weight: 600; cursor: pointer;">😂 Haha</button>
+                    </div>
+                </div>
+            }
         }
     </section>
 
@@ -1049,9 +1124,59 @@
         });
     }
 
+    private string searchQuery = "";
+    private string? activeSearchQuery;
+    private bool showStickerPicker;
+
+    private void ToggleStickerPicker()
+    {
+        showStickerPicker = !showStickerPicker;
+    }
+
+    private async Task SendStickerAsync(string keyword)
+    {
+        if (selected is null) return;
+        sending = true;
+        showStickerPicker = false;
+        try
+        {
+            await InboxSvc.SendStickerAsync(selected.Id, keyword);
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            syncStatusMessage = "Gửi sticker lỗi: " + ex.Message;
+        }
+        finally
+        {
+            sending = false;
+        }
+    }
+
+    private async Task OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await PerformSearchAsync();
+        }
+    }
+
+    private async Task PerformSearchAsync()
+    {
+        activeSearchQuery = string.IsNullOrWhiteSpace(searchQuery) ? null : searchQuery.Trim();
+        await ReloadAsync();
+    }
+
+    private async Task ClearSearchAsync()
+    {
+        searchQuery = "";
+        activeSearchQuery = null;
+        await ReloadAsync();
+    }
+
     private async Task ReloadAsync()
     {
-        conversations = await InboxSvc.GetConversationsAsync(filter, mineOnly ? currentStaffId : null);
+        conversations = await InboxSvc.GetConversationsAsync(filter, mineOnly ? currentStaffId : null, activeSearchQuery);
         var oldSelectedId = selected?.Id;
         selected = conversations.FirstOrDefault(c => c.Id == selectedId);
         if (selected is not null)
@@ -2034,6 +2159,109 @@
         finally
         {
             creatingOrder = false;
+        }
+    }
+
+    private async Task ToggleAiAutoReplyAsync()
+    {
+        Store.Ai.IsAutoReplyEnabled = !Store.Ai.IsAutoReplyEnabled;
+        await Store.SaveAiAsync(Store.Ai);
+        StateHasChanged();
+    }
+
+    private bool isSyncingMessages = false;
+    private string? syncStatusMessage = null;
+
+    private async Task SyncCurrentChannelMessagesAsync()
+    {
+        if (selected == null || isSyncingMessages) return;
+        await SyncChannelMessagesAsync(selected.Channel);
+    }
+
+    private async Task SyncAllChannelsMessagesAsync()
+    {
+        if (isSyncingMessages) return;
+        isSyncingMessages = true;
+        syncStatusMessage = "⏳ Đang đồng bộ tin nhắn mới nhất từ tất cả các kênh...";
+        StateHasChanged();
+
+        int totalConvs = 0;
+        int totalMsgs = 0;
+
+        foreach (var adapter in Adapters)
+        {
+            try
+            {
+                var history = await adapter.FetchHistoryAsync(maxConversations: 15);
+                if (history != null && history.Count > 0)
+                {
+                    var (c, m) = await InboxSvc.ImportHistoryAsync(adapter.Channel, history);
+                    totalConvs += c;
+                    totalMsgs += m;
+                }
+            }
+            catch
+            {
+                // Bỏ qua kênh không hỗ trợ hoặc lỗi kết nối lẻ
+            }
+        }
+
+        await ReloadAsync();
+
+        syncStatusMessage = totalMsgs > 0 
+            ? $"✔ Đồng bộ hoàn tất! Đã nhập {totalMsgs} tin nhắn mới vào Hộp thư." 
+            : "✔ Đã đồng bộ! Tất cả tin nhắn đã ở trạng thái mới nhất.";
+        isSyncingMessages = false;
+        StateHasChanged();
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(4500);
+            syncStatusMessage = null;
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    private async Task SyncChannelMessagesAsync(ChannelType channel)
+    {
+        if (isSyncingMessages) return;
+        isSyncingMessages = true;
+        syncStatusMessage = $"⏳ Đang đồng bộ tin nhắn kênh {ChannelLabel(channel)}...";
+        StateHasChanged();
+
+        try
+        {
+            var adapter = Adapters.FirstOrDefault(a => a.Channel == channel);
+            if (adapter != null)
+            {
+                var history = await adapter.FetchHistoryAsync(maxConversations: 20);
+                if (history != null && history.Count > 0)
+                {
+                    var (c, m) = await InboxSvc.ImportHistoryAsync(channel, history);
+                    syncStatusMessage = $"✔ Đồng bộ thành công kênh {ChannelLabel(channel)}: thêm {m} tin nhắn mới!";
+                }
+                else
+                {
+                    syncStatusMessage = $"✔ Dữ liệu kênh {ChannelLabel(channel)} đã là mới nhất.";
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            syncStatusMessage = $"✕ Đồng bộ kênh {ChannelLabel(channel)} thất bại: {ex.Message}";
+        }
+        finally
+        {
+            await ReloadAsync();
+            isSyncingMessages = false;
+            StateHasChanged();
+
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(4500);
+                syncStatusMessage = null;
+                await InvokeAsync(StateHasChanged);
+            });
         }
     }
 

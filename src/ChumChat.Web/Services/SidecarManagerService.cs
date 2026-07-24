@@ -85,6 +85,16 @@ public class SidecarManagerService : IHostedService, IDisposable
         opts.ApiKey = ""; // Xóa cấu hình để nó không tự chạy lại
         opts.SidecarUrl = "";
         await _store.SaveZaloPersonalAsync(opts);
+
+        try
+        {
+            var sidecarDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "sidecars", "zalo-personal");
+            var credFile = Path.Combine(sidecarDir, "credentials.json");
+            var qrFile = Path.Combine(sidecarDir, "qr.png");
+            if (File.Exists(credFile)) File.Delete(credFile);
+            if (File.Exists(qrFile)) File.Delete(qrFile);
+        }
+        catch { /* ignore */ }
     }
 
     public async Task EnsureMessengerSidecarRunningAsync()
@@ -182,9 +192,19 @@ public class SidecarManagerService : IHostedService, IDisposable
             }
         }
 
+        string nodeCmd = "node";
+        if (!OperatingSystem.IsWindows())
+        {
+            var commonPaths = new[] { "/usr/bin/node", "/usr/local/bin/node", "/root/.nvm/versions/node", "/home/chumchat/.nvm/versions/node" };
+            foreach (var p in commonPaths)
+            {
+                if (File.Exists(p)) { nodeCmd = p; break; }
+            }
+        }
+
         var startInfo = new ProcessStartInfo
         {
-            FileName = OperatingSystem.IsWindows() ? "node.exe" : "node",
+            FileName = nodeCmd,
             Arguments = "index.js",
             WorkingDirectory = dirInfo.FullName,
             UseShellExecute = false,
@@ -212,7 +232,7 @@ public class SidecarManagerService : IHostedService, IDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, $"Lỗi khi khởi động sidecar {name}. Hãy đảm bảo Node.js đã được cài đặt.");
+            _logger.LogError(ex, $"Lỗi khi khởi động sidecar {name} với lệnh '{nodeCmd}'. Hãy đảm bảo Node.js đã được cài đặt.");
             return null;
         }
     }

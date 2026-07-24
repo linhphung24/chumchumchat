@@ -9,7 +9,8 @@ public record InboundMessage(
     string Text,
     string? ExternalMessageId,
     DateTime SentAt,
-    string? AttachmentUrl = null);
+    string? AttachmentUrl = null,
+    MessageDirection Direction = MessageDirection.Inbound);
 
 // Một tin nhắn lịch sử (cả 2 chiều) lấy qua API đồng bộ tin cũ
 public record HistoryMessage(
