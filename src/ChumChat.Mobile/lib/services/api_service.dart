@@ -3,7 +3,16 @@ import 'package:http/http.dart' as http;
 import '../models/models.dart';
 
 class ApiService {
-  static String baseUrl = "http://localhost:5000"; // Có thể thay đổi theo Server IP / VPS domain
+  static String baseUrl = "https://chat.chumchumbakery.com";
+
+  static String get formattedBaseUrl {
+    String url = baseUrl.trim();
+    if (url.endsWith('/')) url = url.substring(0, url.length - 1);
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'http://$url';
+    }
+    return url;
+  }
 
   static Map<String, String> get headers => {
         "Content-Type": "application/json",
@@ -11,7 +20,7 @@ class ApiService {
       };
 
   static Future<Map<String, dynamic>> login(String username, String password) async {
-    final url = Uri.parse("$baseUrl/api/v1/mobile/login");
+    final url = Uri.parse("$formattedBaseUrl/api/v1/mobile/login");
     final response = await http.post(
       url,
       headers: headers,
@@ -32,7 +41,7 @@ class ApiService {
     if (staffId != null) queryParams["staffId"] = staffId.toString();
     if (search != null && search.isNotEmpty) queryParams["search"] = search;
 
-    final url = Uri.parse("$baseUrl/api/v1/mobile/conversations").replace(queryParameters: queryParams);
+    final url = Uri.parse("$formattedBaseUrl/api/v1/mobile/conversations").replace(queryParameters: queryParams);
     final response = await http.get(url, headers: headers);
 
     if (response.statusCode == 200) {
@@ -43,7 +52,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> getMessages(int conversationId) async {
-    final url = Uri.parse("$baseUrl/api/v1/mobile/conversations/$conversationId/messages");
+    final url = Uri.parse("$formattedBaseUrl/api/v1/mobile/conversations/$conversationId/messages");
     final response = await http.get(url, headers: headers);
 
     if (response.statusCode == 200) {
@@ -60,7 +69,7 @@ class ApiService {
   }
 
   static Future<bool> sendReply(int conversationId, String text, {String? imageUrl}) async {
-    final url = Uri.parse("$baseUrl/api/v1/mobile/conversations/$conversationId/reply");
+    final url = Uri.parse("$formattedBaseUrl/api/v1/mobile/conversations/$conversationId/reply");
     final response = await http.post(
       url,
       headers: headers,
@@ -70,7 +79,7 @@ class ApiService {
   }
 
   static Future<bool> toggleAi(bool enabled) async {
-    final url = Uri.parse("$baseUrl/api/v1/mobile/ai/toggle");
+    final url = Uri.parse("$formattedBaseUrl/api/v1/mobile/ai/toggle");
     final response = await http.post(
       url,
       headers: headers,
@@ -80,7 +89,7 @@ class ApiService {
   }
 
   static Future<bool> getAiStatus() async {
-    final url = Uri.parse("$baseUrl/api/v1/mobile/ai/status");
+    final url = Uri.parse("$formattedBaseUrl/api/v1/mobile/ai/status");
     final response = await http.get(url, headers: headers);
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
@@ -90,7 +99,7 @@ class ApiService {
   }
 
   static Future<List<ProductModel>> getProducts() async {
-    final url = Uri.parse("$baseUrl/api/v1/mobile/products");
+    final url = Uri.parse("$formattedBaseUrl/api/v1/mobile/products");
     final response = await http.get(url, headers: headers);
     if (response.statusCode == 200) {
       final List data = jsonDecode(response.body);

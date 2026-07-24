@@ -34,7 +34,11 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     if (serverUrl.isNotEmpty) {
-      ApiService.baseUrl = serverUrl.endsWith('/') ? serverUrl.substring(0, serverUrl.length - 1) : serverUrl;
+      String cleanUrl = serverUrl.endsWith('/') ? serverUrl.substring(0, serverUrl.length - 1) : serverUrl;
+      if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+        cleanUrl = 'http://$cleanUrl';
+      }
+      ApiService.baseUrl = cleanUrl;
     }
 
     try {
@@ -49,7 +53,12 @@ class _LoginScreenState extends State<LoginScreen> {
         setState(() => _errorMessage = res['message'] ?? "Đăng nhập thất bại");
       }
     } catch (e) {
-      setState(() => _errorMessage = "Lỗi kết nối Server: $e");
+      String errStr = e.toString();
+      if (errStr.contains("Failed host lookup") || errStr.contains("No address associated")) {
+        setState(() => _errorMessage = "Lỗi kết nối: Domain chat.chumchumbakery.com chưa trỏ DNS IP. Bạn hãy thử đổi Địa chỉ Server VPS sang dạng IP: http://103.163.214.101:5000");
+      } else {
+        setState(() => _errorMessage = "Lỗi kết nối Server: $errStr");
+      }
     } finally {
       setState(() => _isLoading = false);
     }
@@ -65,31 +74,28 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Logo Header
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF2563EB),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF2563EB).withOpacity(0.3),
-                      blurRadius: 15,
-                      offset: const Offset(0, 5),
+              // Logo Header Chum Chum Bakery
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: Image.asset(
+                  'assets/logo.png',
+                  width: 90,
+                  height: 90,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    width: 90,
+                    height: 90,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2563EB),
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                  ],
-                ),
-                child: const Center(
-                  child: Text(
-                    "💬",
-                    style: TextStyle(fontSize: 40),
+                    child: const Center(child: Text("💬", style: TextStyle(fontSize: 40))),
                   ),
                 ),
               ),
               const SizedBox(height: 16),
               const Text(
-                "ChumChat Mobile",
+                "ChumChat",
                 style: TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.bold,

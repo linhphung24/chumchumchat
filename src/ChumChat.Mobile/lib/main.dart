@@ -40,7 +40,7 @@ class _ChumChatAppState extends State<ChumChatApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ChumChat Mobile',
+      title: 'ChumChat',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2563EB)),
