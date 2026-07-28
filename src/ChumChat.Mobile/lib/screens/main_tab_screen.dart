@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'inbox_screen.dart';
+import 'orders_summary_screen.dart';
 import 'settings_screen.dart';
 
 class MainTabScreen extends StatefulWidget {
@@ -27,6 +28,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
   Widget build(BuildContext context) {
     final screens = [
       InboxScreen(staffId: widget.staffId, staffName: widget.staffName, isAdmin: widget.isAdmin),
+      const OrdersSummaryScreen(),
       SettingsScreen(staffName: widget.staffName, isAdmin: widget.isAdmin, onLogout: widget.onLogout),
     ];
 
@@ -38,6 +40,7 @@ class _MainTabScreenState extends State<MainTabScreen> {
         onTap: (idx) => setState(() => _currentIndex = idx),
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.chat_bubble_outline), activeIcon: Icon(Icons.chat_bubble), label: "Hộp thư"),
+          BottomNavigationBarItem(icon: Icon(Icons.inventory_2_outlined), activeIcon: Icon(Icons.inventory_2), label: "Tổng hợp Đơn"),
           BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), activeIcon: Icon(Icons.settings), label: "Cài đặt"),
         ],
       ),

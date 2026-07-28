@@ -177,6 +177,9 @@ public class InboxService(
                 {
                     logger.LogError(ex, "Lỗi khi parse JSON chốt đơn của AI");
                 }
+
+                // Cắt bỏ phần [ORDER_READY] để tin nhắn gửi cho khách được sạch sẽ, không lộ JSON
+                reply = reply[..idx].Trim();
             }
 
             // Gửi tin nhắn trả lời
@@ -235,8 +238,15 @@ public class InboxService(
     public async Task<Message> SendReplyAsync(int conversationId, string text, ReplyImage? image = null)
     {
         await using var db = await dbFactory.CreateDbContextAsync();
-        var conversation = await db.Conversations.FirstAsync(c => c.Id == conversationId);
-        var adapter = adapters.First(a => a.Channel == conversation.Channel);
+        var conversation = await db.Conversations.FirstOrDefaultAsync(c => c.Id == conversationId);
+        if (conversation == null)
+            throw new InvalidOperationException($"Không tìm thấy cuộc hội thoại #{conversationId}");
+
+        var adapter = adapters.FirstOrDefault(a => a.Channel == conversation.Channel);
+        if (adapter == null)
+        {
+            throw new InvalidOperationException($"Chưa kích hoạt kênh kết nối cho loại kênh {conversation.Channel}");
+        }
 
         var message = new Message
         {
@@ -677,6 +687,144 @@ public class InboxService(
 
     public bool IsChannelConfigured(ChannelType channel) =>
         adapters.First(a => a.Channel == channel).IsConfigured;
+
+    public async Task<List<Order>> GetAllOrdersSummaryAsync(string? search = null, string? productName = null, string? area = null, bool? isGrouped = null, string? statusFilter = "active")
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var query = db.Orders
+            .Include(o => o.Items)
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(o =>
+                o.Title.ToLower().Contains(s) ||
+                o.CustomerPhone.ToLower().Contains(s) ||
+                o.CustomerAddress.ToLower().Contains(s) ||
+                o.Note.ToLower().Contains(s) ||
+                (o.GroupBatchCode != null && o.GroupBatchCode.ToLower().Contains(s)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(productName))
+        {
+            var p = productName.Trim().ToLower();
+            query = query.Where(o => o.Items.Any(i => i.ProductName.ToLower().Contains(p)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(area))
+        {
+            var a = area.Trim().ToLower();
+            query = query.Where(o => o.CustomerAddress.ToLower().Contains(a));
+        }
+
+        if (isGrouped.HasValue)
+        {
+            query = query.Where(o => o.IsGrouped == isGrouped.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(statusFilter) && statusFilter != "all")
+        {
+            if (statusFilter == "active")
+            {
+                query = query.Where(o => o.AhamoveStatus == null ||
+                    (o.AhamoveStatus != "COMPLETED" && o.AhamoveStatus != "COMPLETED_BY_DRIVER" &&
+                     o.AhamoveStatus != "CANCELED" && o.AhamoveStatus != "CANCELLED" && o.AhamoveStatus != "EXPIRED"));
+            }
+            else if (statusFilter == "completed")
+            {
+                query = query.Where(o => o.AhamoveStatus == "COMPLETED" || o.AhamoveStatus == "COMPLETED_BY_DRIVER");
+            }
+            else if (statusFilter == "cancelled")
+            {
+                query = query.Where(o => o.AhamoveStatus == "CANCELED" || o.AhamoveStatus == "CANCELLED" || o.AhamoveStatus == "EXPIRED");
+            }
+        }
+
+        return await query.OrderByDescending(o => o.CreatedAt).ToListAsync();
+    }
+
+    public async Task UpdateOrderStatusAsync(int orderId, string status)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var order = await db.Orders.FirstOrDefaultAsync(o => o.Id == orderId);
+        if (order != null)
+        {
+            order.AhamoveStatus = status;
+            await db.SaveChangesAsync();
+            events.NotifyChanged();
+        }
+    }
+
+    public async Task<string> BatchGroupOrdersAsync(List<int> orderIds, string? batchCode = null)
+    {
+        if (orderIds == null || orderIds.Count == 0) return "";
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var orders = await db.Orders.Where(o => orderIds.Contains(o.Id)).ToListAsync();
+        if (orders.Count == 0) return "";
+
+        var code = string.IsNullOrWhiteSpace(batchCode) 
+            ? $"CH-{DateTime.Now:yyyyMMdd-HHmm}" 
+            : batchCode.Trim();
+
+        foreach (var order in orders)
+        {
+            order.IsGrouped = true;
+            order.GroupBatchCode = code;
+            if (!order.Note.Contains($"[Đơn ghép: {code}]"))
+            {
+                order.Note = string.IsNullOrWhiteSpace(order.Note)
+                    ? $"[Đơn ghép: {code}]"
+                    : $"[Đơn ghép: {code}] | {order.Note}";
+            }
+        }
+
+        await db.SaveChangesAsync();
+        events.NotifyChanged();
+        return code;
+    }
+
+    public async Task BatchUngroupOrdersAsync(List<int> orderIds)
+    {
+        if (orderIds == null || orderIds.Count == 0) return;
+
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var orders = await db.Orders.Where(o => orderIds.Contains(o.Id)).ToListAsync();
+        if (orders.Count == 0) return;
+
+        foreach (var order in orders)
+        {
+            order.IsGrouped = false;
+            order.GroupBatchCode = null;
+        }
+
+        await db.SaveChangesAsync();
+        events.NotifyChanged();
+    }
+
+    public async Task<List<Order>> GetOrdersByIdsAsync(List<int> orderIds)
+    {
+        if (orderIds == null || orderIds.Count == 0) return new List<Order>();
+        await using var db = await dbFactory.CreateDbContextAsync();
+        return await db.Orders.Include(o => o.Items).Where(o => orderIds.Contains(o.Id)).ToListAsync();
+    }
+
+    public async Task BatchUpdateLalamoveOrderInfoAsync(List<int> orderIds, string lalamoveOrderId, string trackingLink)
+    {
+        if (orderIds == null || orderIds.Count == 0) return;
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var orders = await db.Orders.Where(o => orderIds.Contains(o.Id)).ToListAsync();
+        foreach (var o in orders)
+        {
+            o.AhamoveOrderId = lalamoveOrderId;
+            o.AhamoveTrackingLink = trackingLink;
+            o.AhamoveStatus = "ASSIGNING_DRIVER";
+        }
+        await db.SaveChangesAsync();
+        events.NotifyChanged();
+    }
 
     private static string Truncate(string value, int max) =>
         value.Length <= max ? value : value[..max] + "…";

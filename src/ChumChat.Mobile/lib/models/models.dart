@@ -1,3 +1,5 @@
+import '../services/api_service.dart';
+
 class ConversationModel {
   final int id;
   final int channel;
@@ -29,21 +31,34 @@ class ConversationModel {
     this.assignedStaffId,
   });
 
+  String? get fullAvatarUrl {
+    if (avatarUrl == null || avatarUrl!.trim().isEmpty) return null;
+    final url = avatarUrl!.trim();
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    String base = ApiService.formattedBaseUrl;
+    if (url.startsWith('/')) {
+      return "$base$url";
+    }
+    return "$base/$url";
+  }
+
   factory ConversationModel.fromJson(Map<String, dynamic> json) {
     return ConversationModel(
-      id: json['id'] ?? 0,
-      channel: json['channel'] ?? 0,
-      channelName: getChannelLabel(json['channel'] ?? 0),
-      externalId: json['externalId'] ?? '',
-      customerName: json['customerName'] ?? 'Khách hàng',
-      customerPhone: json['customerPhone'] ?? '',
-      customerAddress: json['customerAddress'] ?? '',
-      avatarUrl: json['avatarUrl'],
-      lastMessagePreview: json['lastMessagePreview'] ?? '',
-      lastMessageAt: DateTime.tryParse(json['lastMessageAt'] ?? '') ?? DateTime.now(),
-      unreadCount: json['unreadCount'] ?? 0,
-      tag: json['tag'],
-      assignedStaffId: json['assignedStaffId'],
+      id: json['id'] ?? json['Id'] ?? 0,
+      channel: json['channel'] ?? json['Channel'] ?? 0,
+      channelName: getChannelLabel(json['channel'] ?? json['Channel'] ?? 0),
+      externalId: (json['externalId'] ?? json['ExternalId'] ?? '').toString(),
+      customerName: (json['customerName'] ?? json['CustomerName'] ?? 'Khách hàng').toString(),
+      customerPhone: (json['customerPhone'] ?? json['CustomerPhone'] ?? '').toString(),
+      customerAddress: (json['customerAddress'] ?? json['CustomerAddress'] ?? '').toString(),
+      avatarUrl: json['avatarUrl'] ?? json['AvatarUrl'] ?? json['customerAvatarUrl'],
+      lastMessagePreview: (json['lastMessagePreview'] ?? json['LastMessagePreview'] ?? '').toString(),
+      lastMessageAt: DateTime.tryParse((json['lastMessageAt'] ?? json['LastMessageAt'] ?? '').toString()) ?? DateTime.now(),
+      unreadCount: json['unreadCount'] ?? json['UnreadCount'] ?? 0,
+      tag: json['tag'] ?? json['Tag'],
+      assignedStaffId: json['assignedStaffId'] ?? json['AssignedStaffId'],
     );
   }
 
@@ -94,15 +109,37 @@ class MessageModel {
 
   bool get isOutbound => direction == 1;
 
+  String? get fullAttachmentUrl {
+    if (attachmentUrl == null || attachmentUrl!.trim().isEmpty) return null;
+    final url = attachmentUrl!.trim();
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return url;
+    }
+    String base = ApiService.formattedBaseUrl;
+    if (url.startsWith('/')) {
+      return "$base$url";
+    }
+    return "$base/$url";
+  }
+
   factory MessageModel.fromJson(Map<String, dynamic> json) {
+    int dir = 0;
+    var rawDir = json['direction'] ?? json['Direction'];
+    if (rawDir is int) {
+      dir = rawDir;
+    } else if (rawDir != null) {
+      String dStr = rawDir.toString();
+      if (dStr == '1' || dStr.toLowerCase() == 'outbound') dir = 1;
+    }
+
     return MessageModel(
-      id: json['id'] ?? 0,
-      conversationId: json['conversationId'] ?? 0,
-      direction: json['direction'] ?? 0,
-      text: json['text'] ?? '',
-      attachmentUrl: json['attachmentUrl'],
-      sentAt: DateTime.tryParse(json['sentAt'] ?? '') ?? DateTime.now(),
-      status: json['status'] ?? 0,
+      id: json['id'] ?? json['Id'] ?? 0,
+      conversationId: json['conversationId'] ?? json['ConversationId'] ?? 0,
+      direction: dir,
+      text: (json['text'] ?? json['Text'] ?? '').toString(),
+      attachmentUrl: json['attachmentUrl'] ?? json['AttachmentUrl'],
+      sentAt: DateTime.tryParse((json['sentAt'] ?? json['SentAt'] ?? '').toString()) ?? DateTime.now(),
+      status: json['status'] ?? json['Status'] ?? 0,
     );
   }
 }

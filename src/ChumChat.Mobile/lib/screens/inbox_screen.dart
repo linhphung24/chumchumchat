@@ -193,13 +193,19 @@ class _InboxScreenState extends State<InboxScreen> {
                         separatorBuilder: (_, __) => const Divider(height: 1),
                         itemBuilder: (ctx, idx) {
                           final conv = _conversations[idx];
+                          final avatarUrl = conv.fullAvatarUrl;
                           return ListTile(
                             leading: CircleAvatar(
                               backgroundColor: Colors.blue.shade100,
-                              child: Text(
-                                conv.customerName.isNotEmpty ? conv.customerName[0].toUpperCase() : 'C',
-                                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
-                              ),
+                              backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
+                                  ? NetworkImage(avatarUrl)
+                                  : null,
+                              child: (avatarUrl == null || avatarUrl.isEmpty)
+                                  ? Text(
+                                      conv.customerName.isNotEmpty ? conv.customerName[0].toUpperCase() : 'C',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+                                    )
+                                  : null,
                             ),
                             title: Row(
                               children: [

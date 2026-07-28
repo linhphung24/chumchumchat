@@ -11,7 +11,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
-builder.Services.AddControllers();
+builder.Services.AddControllers().AddJsonOptions(options =>
+{
+    options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+});
 builder.Services.AddHttpClient();
 builder.Services.AddHttpContextAccessor();
 
@@ -218,6 +221,8 @@ using (var scope = app.Services.CreateScope())
         ("AhamoveOrderId", """ALTER TABLE "Orders" ADD COLUMN "AhamoveOrderId" TEXT NULL"""),
         ("AhamoveTrackingLink", """ALTER TABLE "Orders" ADD COLUMN "AhamoveTrackingLink" TEXT NULL"""),
         ("AhamoveStatus", """ALTER TABLE "Orders" ADD COLUMN "AhamoveStatus" TEXT NULL"""),
+        ("IsGrouped", """ALTER TABLE "Orders" ADD COLUMN "IsGrouped" INTEGER NOT NULL DEFAULT 0"""),
+        ("GroupBatchCode", """ALTER TABLE "Orders" ADD COLUMN "GroupBatchCode" TEXT NULL"""),
     })
     {
         var has = db.Database

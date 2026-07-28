@@ -1,0 +1,729 @@
+@page "/don-hang"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Text.Json
+@using ChumChat.Web.Data
+@using ChumChat.Web.Services
+@inject InboxService InboxSvc
+@inject LalamoveService LalamoveSvc
+@inject ChannelSettingsStore Store
+@inject AuthenticationStateProvider AuthState
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>ChumChat — Tổng hợp Đơn hàng & Ghép chuyến giao</PageTitle>
+
+<div class="app-layout-wrapper" style="display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: #f8fafc;">
+    <!-- ===== TOP NAVIGATION HEADER BAR ===== -->
+    <header class="main-top-navbar" style="background: #ffffff; border-bottom: 1px solid #e5e7eb; padding: 0 16px; height: 52px; min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.03); z-index: 100; flex-shrink: 0;">
+        <!-- Logo & Status -->
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <h1 style="margin: 0; font-size: 1.25rem; font-weight: 800; background: linear-gradient(135deg, #2563eb, #7c3aed); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">ChumChat</h1>
+            <span style="font-size: 11px; background: #ecfdf5; color: #047857; font-weight: 600; padding: 2px 8px; border-radius: 12px; border: 1px solid #a7f3d0; display: inline-flex; align-items: center; gap: 4px;">
+                <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981; display: inline-block;"></span> Quản lý Đơn hàng
+            </span>
+        </div>
+
+        <!-- Main Navigation Tabs -->
+        <nav style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <a href="/" class="top-nav-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #f9fafb; color: #374151; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #e5e7eb; transition: all 0.15s ease;">
+                <span>💬</span> <span>Hộp Thư</span>
+            </a>
+            <a href="/don-hang" class="top-nav-btn active" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #eff6ff; color: #1d4ed8; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #bfdbfe; transition: all 0.15s ease;">
+                <span>📦</span> <span>Tổng Hợp Đơn Hàng</span>
+            </a>
+            <a href="/thuc-don" class="top-nav-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #f9fafb; color: #374151; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #e5e7eb; transition: all 0.15s ease;">
+                <span>🍔</span> <span>Thực Đơn iPOS</span>
+            </a>
+            @if (isAdmin)
+            {
+                <a href="/tro-ly-ai" class="top-nav-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #f9fafb; color: #374151; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #e5e7eb; transition: all 0.15s ease;">
+                    <span>✨</span> <span>Trợ Lý AI</span>
+                </a>
+                <a href="/simulator" class="top-nav-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #f9fafb; color: #374151; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #e5e7eb; transition: all 0.15s ease;">
+                    <span>🧪</span> <span>Giả Lập Bot</span>
+                </a>
+                <a href="/settings" class="top-nav-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; background: #f9fafb; color: #374151; text-decoration: none; font-size: 13px; font-weight: 600; border: 1px solid #e5e7eb; transition: all 0.15s ease;">
+                    <span>⚙️</span> <span>Cấu Hình</span>
+                </a>
+            }
+        </nav>
+    </header>
+
+    <!-- ===== MAIN CONTENT BODY ===== -->
+    <div style="flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; max-width: 1400px; margin: 0 auto; width: 100%;">
+
+        <!-- HEADER SUMMARY METRICS -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
+            <div style="background: #ffffff; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.02); display: flex; align-items: center; gap: 14px;">
+                <div style="width: 46px; height: 46px; border-radius: 10px; background: #eff6ff; color: #2563eb; display: flex; align-items: center; justify-content: center; font-size: 22px;">📦</div>
+                <div>
+                    <div style="font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase;">Tổng đơn hiển thị</div>
+                    <div style="font-size: 22px; font-weight: 800; color: #0f172a;">@orders.Count <span style="font-size: 13px; font-weight: 500; color: #64748b;">đơn</span></div>
+                </div>
+            </div>
+
+            <div style="background: #ffffff; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.02); display: flex; align-items: center; gap: 14px;">
+                <div style="width: 46px; height: 46px; border-radius: 10px; background: #f0fdf4; color: #16a34a; display: flex; align-items: center; justify-content: center; font-size: 22px;">💰</div>
+                <div>
+                    <div style="font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase;">Tổng doanh thu đơn</div>
+                    <div style="font-size: 22px; font-weight: 800; color: #16a34a;">@totalRevenue.ToString("N0")đ</div>
+                </div>
+            </div>
+
+            <div style="background: #ffffff; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.02); display: flex; align-items: center; gap: 14px;">
+                <div style="width: 46px; height: 46px; border-radius: 10px; background: #faf5ff; color: #9333ea; display: flex; align-items: center; justify-content: center; font-size: 22px;">🔗</div>
+                <div>
+                    <div style="font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase;">Đơn ghép chuyến</div>
+                    <div style="font-size: 22px; font-weight: 800; color: #9333ea;">@groupedCount <span style="font-size: 13px; font-weight: 500; color: #64748b;">đơn ghép</span></div>
+                </div>
+            </div>
+
+            <div style="background: #ffffff; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.02); display: flex; align-items: center; gap: 14px;">
+                <div style="width: 46px; height: 46px; border-radius: 10px; background: #fff7ed; color: #ea580c; display: flex; align-items: center; justify-content: center; font-size: 22px;">☑</div>
+                <div>
+                    <div style="font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase;">Đã chọn tích chọn</div>
+                    <div style="font-size: 22px; font-weight: 800; color: #ea580c;">@selectedOrderIds.Count <span style="font-size: 13px; font-weight: 500; color: #64748b;">đơn</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SEARCH & FILTER BAR PANEL -->
+        <div style="background: #ffffff; padding: 18px; border-radius: 14px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.03); display: flex; flex-direction: column; gap: 14px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;">
+                <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+                    <span>🔍</span> Bộ lọc & Tìm kiếm đơn hàng đa chiều
+                </h3>
+                <button @onclick="ResetFilters" style="padding: 6px 12px; border-radius: 6px; background: #f1f5f9; border: 1px solid #cbd5e1; font-size: 12px; font-weight: 600; color: #475569; cursor: pointer;">
+                    ↺ Xóa bộ lọc
+                </button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                <!-- Keyword search -->
+                <div>
+                    <label style="display: block; font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 4px;">Tìm tên khách / SĐT / Ghi chú</label>
+                    <input @bind="searchKeyword" @bind:event="oninput" @onkeyup="ApplyFilters" placeholder="Nhập tên, SĐT, ghi chú..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; outline: none;" />
+                </div>
+
+                <!-- Product Name filter -->
+                <div>
+                    <label style="display: block; font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 4px;">Lọc loại bánh / Sản phẩm</label>
+                    <input @bind="selectedProduct" @bind:event="oninput" @onkeyup="ApplyFilters" placeholder="VD: Sourdough, Mochi, Bánh bao..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; outline: none;" />
+                </div>
+
+                <!-- Area District filter -->
+                <div>
+                    <label style="display: block; font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 4px;">Lọc theo Khu vực / Quận Huyện</label>
+                    <select @bind="selectedArea" @bind:after="ApplyFilters" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; outline: none; background: #fff;">
+                        <option value="">-- Tất cả khu vực --</option>
+                        <optgroup label="🏙️ Các Quận Nội Thành">
+                            <option value="Thanh Xuân">Quận Thanh Xuân</option>
+                            <option value="Cầu Giấy">Quận Cầu Giấy</option>
+                            <option value="Đống Đa">Quận Đống Đa</option>
+                            <option value="Hai Bà Trưng">Quận Hai Bà Trưng</option>
+                            <option value="Hoàn Kiếm">Quận Hoàn Kiếm</option>
+                            <option value="Ba Đình">Quận Ba Đình</option>
+                            <option value="Tây Hồ">Quận Tây Hồ</option>
+                            <option value="Hoàng Mai">Quận Hoàng Mai</option>
+                            <option value="Hà Đông">Quận Hà Đông</option>
+                            <option value="Nam Từ Liêm">Quận Nam Từ Liêm</option>
+                            <option value="Bắc Từ Liêm">Quận Bắc Từ Liêm</option>
+                            <option value="Long Biên">Quận Long Biên</option>
+                        </optgroup>
+                        <optgroup label="🏡 Các Huyện & Thị Xã Ngoại Thành">
+                            <option value="Thanh Trì">Huyện Thanh Trì</option>
+                            <option value="Gia Lâm">Huyện Gia Lâm</option>
+                            <option value="Đông Anh">Huyện Đông Anh</option>
+                            <option value="Hoài Đức">Huyện Hoài Đức</option>
+                            <option value="Đan Phượng">Huyện Đan Phượng</option>
+                            <option value="Sóc Sơn">Huyện Sóc Sơn</option>
+                            <option value="Mê Linh">Huyện Mê Linh</option>
+                            <option value="Chương Mỹ">Huyện Chương Mỹ</option>
+                            <option value="Thanh Oai">Huyện Thanh Oai</option>
+                            <option value="Thường Tín">Huyện Thường Tín</option>
+                            <option value="Phú Xuyên">Huyện Phú Xuyên</option>
+                            <option value="Quốc Oai">Huyện Quốc Oai</option>
+                            <option value="Thạch Thất">Huyện Thạch Thất</option>
+                            <option value="Ba Vì">Huyện Ba Vì</option>
+                            <option value="Phúc Thọ">Huyện Phúc Thọ</option>
+                            <option value="Mỹ Đức">Huyện Mỹ Đức</option>
+                            <option value="Ứng Hòa">Huyện Ứng Hòa</option>
+                            <option value="Sơn Tây">Thị xã Sơn Tây</option>
+                        </optgroup>
+                    </select>
+                </div>
+
+                <!-- Group Status filter -->
+                <div>
+                    <label style="display: block; font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 4px;">Phân loại Đơn ghép</label>
+                    <select @bind="selectedGroupFilter" @bind:after="ApplyFilters" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; outline: none; background: #fff;">
+                        <option value="all">-- Tất cả đơn --</option>
+                        <option value="grouped">🔗 Chỉ đơn ghép chuyến</option>
+                        <option value="single">📦 Chỉ đơn lẻ</option>
+                    </select>
+                </div>
+
+                <!-- Order Processing Status filter -->
+                <div>
+                    <label style="display: block; font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 4px;">Trạng thái xử lý Đơn</label>
+                    <select @bind="selectedStatusFilter" @bind:after="ApplyFilters" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 13px; outline: none; background: #fff; font-weight: 600; color: #1e293b;">
+                        <option value="active">⏳ Đang xử lý / Chờ giao (Mặc định)</option>
+                        <option value="completed">✅ Đã hoàn thành</option>
+                        <option value="cancelled">❌ Đã hủy</option>
+                        <option value="all">🌐 Tất cả trạng thái</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- BATCH ACTIONS TOOLBAR (TÍCH ĐẶT ĐƠN GHẾP) -->
+        <div style="background: #ffffff; padding: 14px 18px; border-radius: 12px; border: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <label style="display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: #334155; cursor: pointer; user-select: none;">
+                    <input type="checkbox" checked="@isAllSelected" @onchange="ToggleSelectAll" style="width: 17px; height: 17px; cursor: pointer; accent-color: #2563eb;" />
+                    <span>Chọn tất cả (@orders.Count đơn)</span>
+                </label>
+                @if (selectedOrderIds.Count > 0)
+                {
+                    <span style="font-size: 12px; background: #fef3c7; color: #d97706; padding: 3px 10px; border-radius: 20px; font-weight: 700;">
+                        Đã chọn @selectedOrderIds.Count đơn hàng
+                    </span>
+                }
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                @if (selectedOrderIds.Count > 0)
+                {
+                    <button @onclick="OpenLalamoveGroupModal" style="padding: 8px 16px; border-radius: 8px; background: #f43f5e; color: #ffffff; border: none; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(244,63,94,0.25);">
+                        <span>📦</span> Đặt xe Lalamove ghép (@selectedOrderIds.Count đơn)
+                    </button>
+                    <button @onclick="OpenGroupModal" style="padding: 8px 16px; border-radius: 8px; background: #9333ea; color: #ffffff; border: none; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(147,51,234,0.2);">
+                        <span>🔗</span> Tích ghép chuyến (@selectedOrderIds.Count)
+                    </button>
+                    <button @onclick="UngroupSelected" style="padding: 8px 14px; border-radius: 8px; background: #f8fafc; color: #dc2626; border: 1px solid #fca5a5; font-size: 13px; font-weight: 600; cursor: pointer;">
+                        <span>❌</span> Hủy ghép
+                    </button>
+                }
+                <button @onclick="PrintManifest" style="padding: 8px 14px; border-radius: 8px; background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                    <span>🖨</span> In danh sách đơn ghép
+                </button>
+            </div>
+        </div>
+
+        <!-- ORDERS DATA TABLE -->
+        <div style="background: #ffffff; border-radius: 14px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+            @if (isLoading)
+            {
+                <div style="padding: 40px; text-align: center; color: #64748b; font-size: 14px;">
+                    ⌛ Đang tải danh sách đơn hàng...
+                </div>
+            }
+            else if (orders.Count == 0)
+            {
+                <div style="padding: 50px; text-align: center; color: #94a3b8;">
+                    <div style="font-size: 40px; margin-bottom: 10px;">📦</div>
+                    <div style="font-size: 15px; font-weight: 600; color: #64748b;">Không tìm thấy đơn hàng nào phù hợp</div>
+                    <div style="font-size: 13px; margin-top: 4px;">Thử thay đổi bộ lọc hoặc tìm kiếm tên/SĐT khác</div>
+                </div>
+            }
+            else
+            {
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                        <thead>
+                            <tr style="background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #475569; font-weight: 700;">
+                                <th style="padding: 12px 14px; width: 40px;">Tích</th>
+                                <th style="padding: 12px 14px;">Mã / Ngày tạo</th>
+                                <th style="padding: 12px 14px;">Khách hàng & SĐT</th>
+                                <th style="padding: 12px 14px;">Địa chỉ & Khu vực</th>
+                                <th style="padding: 12px 14px;">Sản phẩm / Bánh</th>
+                                <th style="padding: 12px 14px;">Tổng tiền</th>
+                                <th style="padding: 12px 14px;">Trạng thái Ghép đơn</th>
+                                <th style="padding: 12px 14px; text-align: right;">Thao tác</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var o in orders)
+                            {
+                                var isSel = selectedOrderIds.Contains(o.Id);
+                                var areaTag = ExtractArea(o.CustomerAddress);
+                                <tr style="border-bottom: 1px solid #f1f5f9; background: @(isSel ? "#f5f3ff" : (o.IsGrouped ? "#faf5ff" : "#ffffff")); transition: background 0.15s ease;">
+                                    <td style="padding: 12px 14px;">
+                                        <input type="checkbox" checked="@isSel" @onchange="() => ToggleSelectOrder(o.Id)" style="width: 17px; height: 17px; cursor: pointer; accent-color: #9333ea;" />
+                                    </td>
+                                    <td style="padding: 12px 14px;">
+                                        <div style="font-weight: 700; color: #1e293b;">#@o.Id</div>
+                                        <div style="font-size: 11px; color: #64748b;">@o.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div>
+                                    </td>
+                                    <td style="padding: 12px 14px;">
+                                        <div style="font-weight: 700; color: #0f172a;">@(string.IsNullOrWhiteSpace(o.Title) ? "Khách hàng" : o.Title)</div>
+                                        @if (!string.IsNullOrWhiteSpace(o.CustomerPhone))
+                                        {
+                                            <div style="font-size: 12px; color: #2563eb; font-family: monospace; font-weight: 600;">📞 @o.CustomerPhone</div>
+                                        }
+                                    </td>
+                                    <td style="padding: 12px 14px; max-width: 260px;">
+                                        @if (!string.IsNullOrWhiteSpace(areaTag))
+                                        {
+                                            <span style="display: inline-block; font-size: 11px; background: #e0f2fe; color: #0369a1; font-weight: 700; padding: 1px 6px; border-radius: 4px; margin-bottom: 4px;">📍 @areaTag</span>
+                                        }
+                                        <div style="color: #334155; font-size: 12px; line-height: 1.3;">@(string.IsNullOrWhiteSpace(o.CustomerAddress) ? "(Chưa nhập địa chỉ)" : o.CustomerAddress)</div>
+                                    </td>
+                                    <td style="padding: 12px 14px;">
+                                        @if (o.Items != null && o.Items.Count > 0)
+                                        {
+                                            @foreach (var item in o.Items)
+                                            {
+                                                <div style="font-size: 12px; color: #1e293b;">
+                                                    <span style="font-weight: 600;">• @item.ProductName</span> x @item.Quantity
+                                                </div>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <div style="font-size: 12px; color: #64748b; font-style: italic;">Sản phẩm không ghi chi tiết</div>
+                                        }
+                                    </td>
+                                    <td style="padding: 12px 14px;">
+                                        <div style="font-weight: 800; color: #16a34a; font-size: 14px;">@o.Amount.ToString("N0")đ</div>
+                                        @if (!string.IsNullOrWhiteSpace(o.PaymentMethod))
+                                        {
+                                            <div style="font-size: 11px; color: #64748b;">@o.PaymentMethod</div>
+                                        }
+                                    </td>
+                                    <td style="padding: 12px 14px;">
+                                        @if (o.IsGrouped)
+                                        {
+                                            <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; background: #f3e8ff; color: #7e22ce; border: 1px solid #d8b4fe; font-weight: 700; padding: 4px 10px; border-radius: 20px;">
+                                                🔗 Chuyến: @(string.IsNullOrWhiteSpace(o.GroupBatchCode) ? "Đơn ghép" : o.GroupBatchCode)
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; background: #f1f5f9; color: #64748b; font-weight: 600; padding: 4px 10px; border-radius: 20px;">
+                                                📦 Đơn lẻ
+                                            </span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(o.AhamoveOrderId))
+                                        {
+                                            <div style="margin-top: 4px;">
+                                                <a href="@o.AhamoveTrackingLink" target="_blank" style="font-size: 10px; color: #f43f5e; font-weight: 700; text-decoration: underline;">
+                                                    🚚 Lalamove (@o.AhamoveOrderId)
+                                                </a>
+                                            </div>
+                                        }
+                                    </td>
+                                    <td style="padding: 12px 14px; text-align: right;">
+                                        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap;">
+                                             @if (o.AhamoveStatus == "COMPLETED" || o.AhamoveStatus == "COMPLETED_BY_DRIVER")
+                                             {
+                                                 <span style="font-size: 11px; background: #dcfce7; color: #166534; font-weight: 700; padding: 3px 8px; border-radius: 4px;">✅ Hoàn thành</span>
+                                                 <button @onclick='() => ChangeOrderStatus(o.Id, "")' style="padding: 5px 8px; border-radius: 6px; background: #f1f5f9; color: #475569; font-weight: 700; font-size: 11px; border: 1px solid #cbd5e1; cursor: pointer;" title="Khôi phục trạng thái Đang xử lý">
+                                                     🔄 Khôi phục
+                                                 </button>
+                                             }
+                                             else if (o.AhamoveStatus == "CANCELED" || o.AhamoveStatus == "CANCELLED" || o.AhamoveStatus == "EXPIRED")
+                                             {
+                                                 <span style="font-size: 11px; background: #fee2e2; color: #991b1b; font-weight: 700; padding: 3px 8px; border-radius: 4px;">❌ Đã hủy</span>
+                                                 <button @onclick='() => ChangeOrderStatus(o.Id, "")' style="padding: 5px 8px; border-radius: 6px; background: #f1f5f9; color: #475569; font-weight: 700; font-size: 11px; border: 1px solid #cbd5e1; cursor: pointer;" title="Khôi phục trạng thái Đang xử lý">
+                                                     🔄 Khôi phục
+                                                 </button>
+                                             }
+                                             else
+                                             {
+                                                 <button @onclick='() => ChangeOrderStatus(o.Id, "COMPLETED")' style="padding: 5px 8px; border-radius: 6px; background: #f0fdf4; color: #16a34a; font-weight: 700; font-size: 11px; border: 1px solid #bbf7d0; cursor: pointer;" title="Đánh dấu Hoàn thành">
+                                                     ✔ Hoàn thành
+                                                 </button>
+                                                 <button @onclick='() => ChangeOrderStatus(o.Id, "CANCELED")' style="padding: 5px 8px; border-radius: 6px; background: #fef2f2; color: #dc2626; font-weight: 700; font-size: 11px; border: 1px solid #fecaca; cursor: pointer;" title="Hủy đơn này">
+                                                     ❌ Hủy
+                                                 </button>
+                                             }
+
+                                            <button @onclick="() => LalamoveSingleOrder(o)" style="padding: 5px 10px; border-radius: 6px; background: #fff1f2; color: #e11d48; font-weight: 700; font-size: 12px; border: 1px solid #fecdd3; cursor: pointer;" title="Đặt Lalamove cho đơn này">
+                                                📦 Lalamove
+                                            </button>
+                                            <button @onclick="() => GroupSingleOrder(o)" style="padding: 5px 10px; border-radius: 6px; background: #faf5ff; color: #9333ea; font-weight: 700; font-size: 12px; border: 1px solid #d8b4fe; cursor: pointer;" title="Tích đặt đơn ghép cho đơn này">
+                                                🔗 Ghép đơn
+                                            </button>
+                                            <a href="/?conv=@o.ConversationId" style="display: inline-block; padding: 5px 12px; border-radius: 6px; background: #eff6ff; color: #2563eb; font-weight: 600; text-decoration: none; font-size: 12px; border: 1px solid #bfdbfe;">
+                                                💬 Chat khách
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- MODAL POPUP GHÉP CHUYẾN ĐƠN HÀNG LALAMOVE -->
+@if (showLalamoveGroupModal)
+{
+    <div style="position: fixed; inset: 0; background: rgba(15,23,42,0.6); backdrop-filter: blur(4px); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px;">
+        <div style="background: #ffffff; border-radius: 16px; width: 100%; max-width: 580px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); overflow: hidden; display: flex; flex-direction: column;">
+            <div style="padding: 16px 20px; background: #f43f5e; color: #ffffff; display: flex; align-items: center; justify-content: space-between;">
+                <h3 style="margin: 0; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                    <span>📦</span> Đặt xe Lalamove ghép (@selectedOrderIds.Count điểm dừng)
+                </h3>
+                <button @onclick="CloseLalamoveGroupModal" style="background: transparent; border: none; color: #ffffff; font-size: 20px; cursor: pointer;">✕</button>
+            </div>
+            <div style="padding: 20px; display: flex; flex-direction: column; gap: 14px; max-height: 70vh; overflow-y: auto;">
+                <div style="font-size: 13px; color: #475569; line-height: 1.4;">
+                    Hệ thống sẽ gọi 1 xe Lalamove chạy ghép qua <strong>@selectedOrderIds.Count điểm giao</strong> tương ứng với các đơn hàng đã tích chọn.
+                </div>
+
+                @if (lalamoveGroupEstimating)
+                {
+                    <div style="padding: 16px; background: #fff1f2; color: #e11d48; border-radius: 10px; font-weight: 600; text-align: center;">
+                        🔄 Đang tính toán quãng đường & phí Lalamove qua @selectedOrderIds.Count điểm...
+                    </div>
+                }
+                else if (!string.IsNullOrEmpty(lalamoveGroupError))
+                {
+                    <div style="padding: 12px; background: #fef2f2; color: #dc2626; border-radius: 10px; font-size: 13px; border: 1px solid #fecaca;">
+                        ✕ Lỗi: @lalamoveGroupError
+                    </div>
+                }
+                else if (lalamoveGroupTotalFee > 0)
+                {
+                    <div style="padding: 14px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; display: flex; align-items: center; justify-content: space-between;">
+                        <span style="font-size: 13px; color: #166534; font-weight: 600;">Phí Lalamove ghép dự kiến:</span>
+                        <span style="font-size: 18px; font-weight: 800; color: #15803d;">@lalamoveGroupTotalFee.ToString("N0")đ</span>
+                    </div>
+                }
+
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <label style="font-size: 12px; font-weight: 700; color: #334155;">Danh sách điểm dừng giao hàng:</label>
+                    <div style="display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto;">
+                        @foreach (var id in selectedOrderIds)
+                        {
+                            var o = orders.FirstOrDefault(x => x.Id == id);
+                            if (o != null)
+                            {
+                                <div style="padding: 10px 12px; border-radius: 8px; background: #f8fafc; border: 1px solid #e2e8f0; font-size: 12px; display: flex; flex-direction: column; gap: 2px;">
+                                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                                        <strong style="color: #0f172a;">#@o.Id - @(string.IsNullOrWhiteSpace(o.Title) ? "Khách hàng" : o.Title)</strong>
+                                        <span style="color: #2563eb; font-weight: 700;">📞 @o.CustomerPhone</span>
+                                    </div>
+                                    <div style="color: #475569;">📍 @(string.IsNullOrWhiteSpace(o.CustomerAddress) ? "Chưa có địa chỉ" : o.CustomerAddress)</div>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+            <div style="padding: 16px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 10px;">
+                <button @onclick="CloseLalamoveGroupModal" style="padding: 8px 16px; border-radius: 8px; background: #ffffff; border: 1px solid #cbd5e1; font-size: 13px; font-weight: 600; cursor: pointer;">Hủy bỏ</button>
+                <button @onclick="ConfirmLalamoveGroupBooking" disabled="@(lalamoveGroupBooking || lalamoveGroupEstimating || lalamoveGroupTotalFee == 0)" style="padding: 8px 20px; border-radius: 8px; background: #f43f5e; color: #ffffff; border: none; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 2px 4px rgba(244,63,94,0.2);">
+                    @(lalamoveGroupBooking ? "Đang tạo chuyến..." : "⚡ Xác nhận Đặt chuyến Lalamove")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- MODAL POPUP GHÉP CHUYẾN ĐƠN HÀNG THƯỜNG -->
+@if (showGroupModal)
+{
+    <div style="position: fixed; inset: 0; background: rgba(15,23,42,0.6); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px;">
+        <div style="background: #ffffff; border-radius: 16px; padding: 24px; max-width: 480px; width: 100%; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); border: 1px solid #e2e8f0;">
+            <h3 style="margin-top: 0; font-size: 17px; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                <span>🔗</span> Ghép chuyến giao hàng (@selectedOrderIds.Count đơn)
+            </h3>
+            <p style="font-size: 13px; color: #64748b; line-height: 1.4; margin-bottom: 16px;">
+                Tạo mã chuyến đơn ghép cho các đơn hàng đã chọn để shipper lấy bánh giao cùng một lượt.
+            </p>
+
+            <label style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px;">Mã chuyến / Tên đợt ghép đơn</label>
+            <input @bind="modalBatchCode" placeholder="VD: CH-CHIEUNAY-THANHXUAN" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 14px; margin-bottom: 20px; outline: none; font-weight: 600;" />
+
+            <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button @onclick="() => showGroupModal = false" style="padding: 9px 16px; border-radius: 8px; background: #f1f5f9; color: #475569; border: none; font-size: 13px; font-weight: 600; cursor: pointer;">Hủy bỏ</button>
+                <button @onclick="ConfirmGroupBatch" style="padding: 9px 18px; border-radius: 8px; background: #9333ea; color: #ffffff; border: none; font-size: 13px; font-weight: 700; cursor: pointer;">Xác nhận Ghép đơn</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isAdmin;
+    private bool isLoading = true;
+    private List<Order> orders = [];
+    private HashSet<int> selectedOrderIds = [];
+
+    // Filter states
+    private string searchKeyword = "";
+    private string selectedProduct = "";
+    private string selectedArea = "";
+    private string selectedGroupFilter = "all"; // all, grouped, single
+    private string selectedStatusFilter = "active"; // active, completed, cancelled, all
+
+    private async Task ChangeOrderStatus(int orderId, string status)
+    {
+        await InboxSvc.UpdateOrderStatusAsync(orderId, status);
+        await LoadOrdersAsync();
+    }
+
+    // Batch grouping modal
+    private bool showGroupModal = false;
+    private string modalBatchCode = "";
+
+    private bool showLalamoveGroupModal = false;
+    private bool lalamoveGroupEstimating = false;
+    private bool lalamoveGroupBooking = false;
+    private long lalamoveGroupTotalFee = 0;
+    private string lalamoveGroupQuotationId = "";
+    private string lalamoveGroupSenderStopId = "";
+    private string lalamoveGroupError = "";
+    private List<LalamoveMultiStopRecipient> lalamoveRecipients = new();
+
+    private void LalamoveSingleOrder(Order o)
+    {
+        selectedOrderIds.Clear();
+        selectedOrderIds.Add(o.Id);
+        _ = OpenLalamoveGroupModal();
+    }
+
+    private async Task OpenLalamoveGroupModal()
+    {
+        if (selectedOrderIds.Count == 0) return;
+        showLalamoveGroupModal = true;
+        lalamoveGroupEstimating = true;
+        lalamoveGroupError = "";
+        lalamoveGroupTotalFee = 0;
+        lalamoveGroupQuotationId = "";
+        lalamoveGroupSenderStopId = "";
+        lalamoveRecipients.Clear();
+
+        StateHasChanged();
+
+        try
+        {
+            var lalaOpts = Store.Lalamove;
+            if (string.IsNullOrEmpty(lalaOpts.ApiKey))
+            {
+                lalamoveGroupError = "Chưa cấu hình Lalamove API Key. Vui lòng vào Cấu Hình để thiết lập!";
+                lalamoveGroupEstimating = false;
+                return;
+            }
+
+            var targetOrders = orders.Where(x => selectedOrderIds.Contains(x.Id)).ToList();
+            foreach (var o in targetOrders)
+            {
+                var addr = o.CustomerAddress;
+                if (string.IsNullOrWhiteSpace(addr)) continue;
+
+                var coords = await LalamoveSvc.GeocodeAddressAsync(addr);
+                if (coords.Lat == 0 && coords.Lng == 0)
+                {
+                    coords = (lalaOpts.SenderLat != 0 ? lalaOpts.SenderLat : 21.028511, lalaOpts.SenderLng != 0 ? lalaOpts.SenderLng : 105.854444);
+                }
+
+                lalamoveRecipients.Add(new LalamoveMultiStopRecipient
+                {
+                    OrderId = o.Id,
+                    Name = string.IsNullOrWhiteSpace(o.Title) ? "Khách hàng" : o.Title,
+                    Phone = string.IsNullOrWhiteSpace(o.CustomerPhone) ? "0900000000" : o.CustomerPhone,
+                    Address = addr,
+                    Lat = coords.Lat,
+                    Lng = coords.Lng
+                });
+            }
+
+            if (lalamoveRecipients.Count == 0)
+            {
+                lalamoveGroupError = "Các đơn hàng được chọn chưa có địa chỉ giao hàng hợp lệ!";
+                lalamoveGroupEstimating = false;
+                return;
+            }
+
+            var res = await LalamoveSvc.EstimateMultiStopFeeAsync(
+                lalaOpts.SenderLat, lalaOpts.SenderLng, lalaOpts.SenderAddress,
+                lalamoveRecipients, lalaOpts);
+
+            lalamoveGroupQuotationId = res.QuotationId;
+            lalamoveGroupTotalFee = res.TotalFee;
+            lalamoveGroupSenderStopId = res.SenderStopId;
+            lalamoveRecipients = res.Recipients;
+        }
+        catch (Exception ex)
+        {
+            lalamoveGroupError = ex.Message;
+        }
+        finally
+        {
+            lalamoveGroupEstimating = false;
+            StateHasChanged();
+        }
+    }
+
+    private void CloseLalamoveGroupModal()
+    {
+        showLalamoveGroupModal = false;
+    }
+
+    private async Task ConfirmLalamoveGroupBooking()
+    {
+        if (lalamoveRecipients.Count == 0 || lalamoveGroupBooking) return;
+        lalamoveGroupBooking = true;
+        lalamoveGroupError = "";
+        StateHasChanged();
+
+        try
+        {
+            var lalaOpts = Store.Lalamove;
+            var batchCode = $"CH-{DateTime.Now:yyyyMMdd-HHmm}";
+
+            var res = await LalamoveSvc.CreateMultiStopOrderAsync(
+                lalamoveGroupQuotationId,
+                lalamoveGroupSenderStopId,
+                lalaOpts.SenderName, lalaOpts.SenderMobile,
+                lalamoveRecipients, lalaOpts);
+
+            var orderIdList = selectedOrderIds.ToList();
+            await InboxSvc.BatchGroupOrdersAsync(orderIdList, batchCode);
+            await InboxSvc.BatchUpdateLalamoveOrderInfoAsync(orderIdList, res.OrderId, res.ShareLink);
+
+            showLalamoveGroupModal = false;
+            selectedOrderIds.Clear();
+            await LoadOrdersAsync();
+        }
+        catch (Exception ex)
+        {
+            lalamoveGroupError = ex.Message;
+        }
+        finally
+        {
+            lalamoveGroupBooking = false;
+            StateHasChanged();
+        }
+    }
+
+    // Computed metrics
+    private long totalRevenue => orders.Sum(o => o.Amount);
+    private int groupedCount => orders.Count(o => o.IsGrouped);
+    private bool isAllSelected => orders.Count > 0 && selectedOrderIds.Count == orders.Count;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        isAdmin = authState.User.IsInRole("Admin") || authState.User.IsInRole("Manager");
+        await LoadOrdersAsync();
+    }
+
+    private async Task LoadOrdersAsync()
+    {
+        isLoading = true;
+        bool? isGroupedFilter = selectedGroupFilter switch
+        {
+            "grouped" => true,
+            "single" => false,
+            _ => null
+        };
+
+        orders = await InboxSvc.GetAllOrdersSummaryAsync(
+            search: searchKeyword,
+            productName: selectedProduct,
+            area: selectedArea,
+            isGrouped: isGroupedFilter,
+            statusFilter: selectedStatusFilter
+        );
+        isLoading = false;
+    }
+
+    private async Task ApplyFilters()
+    {
+        await LoadOrdersAsync();
+    }
+
+    private async Task ResetFilters()
+    {
+        searchKeyword = "";
+        selectedProduct = "";
+        selectedArea = "";
+        selectedGroupFilter = "all";
+        selectedStatusFilter = "active";
+        await LoadOrdersAsync();
+    }
+
+    private void ToggleSelectOrder(int orderId)
+    {
+        if (selectedOrderIds.Contains(orderId))
+            selectedOrderIds.Remove(orderId);
+        else
+            selectedOrderIds.Add(orderId);
+    }
+
+    private void ToggleSelectAll(ChangeEventArgs e)
+    {
+        if (e.Value is bool checkedVal && checkedVal)
+        {
+            selectedOrderIds = orders.Select(o => o.Id).ToHashSet();
+        }
+        else
+        {
+            selectedOrderIds.Clear();
+        }
+    }
+
+    private void GroupSingleOrder(Order o)
+    {
+        selectedOrderIds.Clear();
+        selectedOrderIds.Add(o.Id);
+        OpenGroupModal();
+    }
+
+    private void OpenGroupModal()
+    {
+        if (selectedOrderIds.Count == 0) return;
+        modalBatchCode = $"CH-{DateTime.Now:yyyyMMdd-HHmm}";
+        showGroupModal = true;
+    }
+
+    private async Task ConfirmGroupBatch()
+    {
+        if (selectedOrderIds.Count == 0) return;
+        await InboxSvc.BatchGroupOrdersAsync(selectedOrderIds.ToList(), modalBatchCode);
+        showGroupModal = false;
+        selectedOrderIds.Clear();
+        await LoadOrdersAsync();
+    }
+
+    private async Task UngroupSelected()
+    {
+        if (selectedOrderIds.Count == 0) return;
+        await InboxSvc.BatchUngroupOrdersAsync(selectedOrderIds.ToList());
+        selectedOrderIds.Clear();
+        await LoadOrdersAsync();
+    }
+
+    private async Task PrintManifest()
+    {
+        await JS.InvokeVoidAsync("window.print");
+    }
+
+    private string ExtractArea(string address)
+    {
+        if (string.IsNullOrWhiteSpace(address)) return "";
+        var addr = address.ToLower();
+        if (addr.Contains("thanh xuân")) return "Thanh Xuân";
+        if (addr.Contains("cầu giấy")) return "Cầu Giấy";
+        if (addr.Contains("đống đa")) return "Đống Đa";
+        if (addr.Contains("hai bà trưng")) return "Hai Bà Trưng";
+        if (addr.Contains("hoàn kiếm")) return "Hoàn Kiếm";
+        if (addr.Contains("ba đình")) return "Ba Đình";
+        if (addr.Contains("tây hồ")) return "Tây Hồ";
+        if (addr.Contains("hoàng mai")) return "Hoàng Mai";
+        if (addr.Contains("hà đông")) return "Hà Đông";
+        if (addr.Contains("thanh trì") || addr.Contains("ngũ hiệp") || addr.Contains("ngọc hồi")) return "Thanh Trì";
+        if (addr.Contains("nam từ liêm")) return "Nam Từ Liêm";
+        if (addr.Contains("bắc từ liêm")) return "Bắc Từ Liêm";
+        if (addr.Contains("long biên")) return "Long Biên";
+        return "";
+    }
+}

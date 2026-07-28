@@ -47,13 +47,18 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Future.delayed(const Duration(milliseconds: 150));
       if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-        );
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+        await Future.delayed(const Duration(milliseconds: 100));
+        if (_scrollController.hasClients) {
+          _scrollController.animateTo(
+            _scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOut,
+          );
+        }
       }
     });
   }
@@ -65,13 +70,18 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     _messageController.clear();
     setState(() => _isSending = true);
 
-    final success = await ApiService.sendReply(widget.conversation.id, text);
-    if (success) {
+    final res = await ApiService.sendReply(widget.conversation.id, text);
+    if (res['success'] == true) {
       await _loadMessages();
     } else {
       if (mounted) {
+        String errMsg = res['message'] ?? "Gửi tin nhắn thất bại";
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("✕ Gửi tin nhắn thất bại")),
+          SnackBar(
+            content: Text("✕ $errMsg"),
+            backgroundColor: Colors.red.shade700,
+            duration: const Duration(seconds: 4),
+          ),
         );
       }
     }
@@ -80,13 +90,34 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final avatarUrl = widget.conversation.fullAvatarUrl;
     return Scaffold(
       appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        title: Row(
           children: [
-            Text(widget.conversation.customerName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-            Text(widget.conversation.channelName, style: const TextStyle(fontSize: 11, color: Colors.black54)),
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: Colors.blue.shade100,
+              backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
+                  ? NetworkImage(avatarUrl)
+                  : null,
+              child: (avatarUrl == null || avatarUrl.isEmpty)
+                  ? Text(
+                      widget.conversation.customerName.isNotEmpty ? widget.conversation.customerName[0].toUpperCase() : 'C',
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.blue, fontSize: 14),
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.conversation.customerName, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+                  Text(widget.conversation.channelName, style: const TextStyle(fontSize: 11, color: Colors.black54)),
+                ],
+              ),
+            ),
           ],
         ),
         actions: [
@@ -118,58 +149,69 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(12),
-                    itemCount: _messages.length,
-                    itemBuilder: (ctx, idx) {
-                      final msg = _messages[idx];
-                      final isMe = msg.isOutbound;
-                      return Align(
-                        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(vertical: 4),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-                          decoration: BoxDecoration(
-                            color: isMe ? const Color(0xFF2563EB) : Colors.grey.shade200,
-                            borderRadius: BorderRadius.only(
-                              topLeft: const Radius.circular(14),
-                              topRight: const Radius.circular(14),
-                              bottomLeft: isMe ? const Radius.circular(14) : const Radius.circular(2),
-                              bottomRight: isMe ? const Radius.circular(2) : const Radius.circular(14),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
-                            children: [
-                              if (msg.attachmentUrl != null && msg.attachmentUrl!.isNotEmpty)
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(msg.attachmentUrl!, width: 180, height: 180, fit: BoxFit.cover),
-                                ),
-                              if (msg.text.isNotEmpty)
-                                Text(
-                                  msg.text,
-                                  style: TextStyle(
-                                    color: isMe ? Colors.white : Colors.black87,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              const SizedBox(height: 4),
-                              Text(
-                                "${msg.sentAt.hour}:${msg.sentAt.minute.toString().padLeft(2, '0')}",
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: isMe ? Colors.white70 : Colors.black45,
+                : _messages.isEmpty
+                    ? const Center(
+                        child: Text(
+                          "Chưa có tin nhắn nào trong hội thoại này",
+                          style: TextStyle(color: Colors.grey, fontSize: 13),
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: _scrollController,
+                        padding: const EdgeInsets.all(12),
+                        itemCount: _messages.length,
+                        itemBuilder: (ctx, idx) {
+                          final msg = _messages[idx];
+                          final isMe = msg.isOutbound;
+                          final imgUrl = msg.fullAttachmentUrl;
+                          return Align(
+                            alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(vertical: 4),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
+                              decoration: BoxDecoration(
+                                color: isMe ? const Color(0xFF2563EB) : Colors.grey.shade200,
+                                borderRadius: BorderRadius.only(
+                                  topLeft: const Radius.circular(14),
+                                  topRight: const Radius.circular(14),
+                                  bottomLeft: isMe ? const Radius.circular(14) : const Radius.circular(2),
+                                  bottomRight: isMe ? const Radius.circular(2) : const Radius.circular(14),
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+                              child: Column(
+                                crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                                children: [
+                                  if (imgUrl != null && imgUrl.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 6),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Image.network(imgUrl, width: 180, height: 180, fit: BoxFit.cover),
+                                      ),
+                                    ),
+                                  if (msg.text.isNotEmpty)
+                                    Text(
+                                      msg.text,
+                                      style: TextStyle(
+                                        color: isMe ? Colors.white : Colors.black87,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    "${msg.sentAt.hour}:${msg.sentAt.minute.toString().padLeft(2, '0')}",
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: isMe ? Colors.white70 : Colors.black45,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
           ),
 
           // Input Bar

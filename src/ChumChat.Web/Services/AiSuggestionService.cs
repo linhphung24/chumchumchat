@@ -49,6 +49,12 @@ public class AiSuggestionService(
         suggestion = suggestion.Trim();
         if (string.IsNullOrEmpty(suggestion))
             throw new InvalidOperationException("AI không trả về gợi ý (có thể do nội dung bị từ chối)");
+
+        if (!isAutoPilot && suggestion.Contains("[ORDER_READY]"))
+        {
+            var idx = suggestion.IndexOf("[ORDER_READY]");
+            suggestion = suggestion[..idx].Trim();
+        }
         return suggestion;
     }
 

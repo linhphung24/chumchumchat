@@ -53,29 +53,42 @@ class ApiService {
 
   static Future<Map<String, dynamic>> getMessages(int conversationId) async {
     final url = Uri.parse("$formattedBaseUrl/api/v1/mobile/conversations/$conversationId/messages");
-    final response = await http.get(url, headers: headers);
+    try {
+      final response = await http.get(url, headers: headers);
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = jsonDecode(response.body);
+        final List msgs = data['messages'] ?? [];
+        final List ords = data['orders'] ?? [];
 
-    if (response.statusCode == 200) {
-      final Map<String, dynamic> data = jsonDecode(response.body);
-      final List msgs = data['messages'] ?? [];
-      final List ords = data['orders'] ?? [];
-
-      return {
-        "messages": msgs.map((j) => MessageModel.fromJson(j)).toList(),
-        "orders": ords.map((j) => OrderModel.fromJson(j)).toList(),
-      };
-    }
+        return {
+          "messages": msgs.map((j) => MessageModel.fromJson(j)).toList(),
+          "orders": ords.map((j) => OrderModel.fromJson(j)).toList(),
+        };
+      }
+    } catch (_) {}
     return {"messages": <MessageModel>[], "orders": <OrderModel>[]};
   }
 
-  static Future<bool> sendReply(int conversationId, String text, {String? imageUrl}) async {
+  static Future<Map<String, dynamic>> sendReply(int conversationId, String text, {String? imageUrl}) async {
     final url = Uri.parse("$formattedBaseUrl/api/v1/mobile/conversations/$conversationId/reply");
-    final response = await http.post(
-      url,
-      headers: headers,
-      body: jsonEncode({"text": text, "imageUrl": imageUrl}),
-    );
-    return response.statusCode == 200;
+    try {
+      final response = await http.post(
+        url,
+        headers: headers,
+        body: jsonEncode({"text": text, "imageUrl": imageUrl}),
+      );
+      if (response.statusCode == 200) {
+        return {"success": true};
+      }
+      try {
+        final data = jsonDecode(response.body);
+        return {"success": false, "message": data['error'] ?? data['message'] ?? "Lỗi mã ${response.statusCode}"};
+      } catch (_) {
+        return {"success": false, "message": "Lỗi server (${response.statusCode}): Không thể gửi tin qua kênh kết nối này"};
+      }
+    } catch (e) {
+      return {"success": false, "message": "Lỗi kết nối mạng: $e"};
+    }
   }
 
   static Future<bool> toggleAi(bool enabled) async {
@@ -106,5 +119,36 @@ class ApiService {
       return data.map((j) => ProductModel.fromJson(j)).toList();
     }
     return [];
+  }
+
+  static Future<Map<String, dynamic>> groupOrders(List<int> orderIds, {String? batchCode}) async {
+    final url = Uri.parse("$formattedBaseUrl/api/v1/mobile/orders/group");
+    final response = await http.post(url, headers: headers, body: jsonEncode({"orderIds": orderIds, "batchCode": batchCode}));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    }
+    throw Exception("Không thể ghép đơn (Mã ${response.statusCode})");
+  }
+
+  static Future<bool> ungroupOrders(List<int> orderIds) async {
+    final url = Uri.parse("$formattedBaseUrl/api/v1/mobile/orders/ungroup");
+    final response = await http.post(url, headers: headers, body: jsonEncode({"orderIds": orderIds}));
+    return response.statusCode == 200;
+  }
+
+  static Future<Map<String, dynamic>> bookLalamoveGroupOrders(List<int> orderIds, {String? batchCode}) async {
+    final url = Uri.parse("$formattedBaseUrl/api/v1/mobile/orders/lalamove-book");
+    final response = await http.post(url, headers: headers, body: jsonEncode({"orderIds": orderIds, "batchCode": batchCode}));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    }
+    final data = jsonDecode(response.body);
+    throw Exception(data['error'] ?? "Lỗi khi đặt Lalamove (Mã ${response.statusCode})");
+  }
+
+  static Future<bool> updateOrderStatus(int orderId, String status) async {
+    final url = Uri.parse("$formattedBaseUrl/api/v1/mobile/orders/$orderId/status");
+    final response = await http.post(url, headers: headers, body: jsonEncode({"status": status}));
+    return response.statusCode == 200;
   }
 }

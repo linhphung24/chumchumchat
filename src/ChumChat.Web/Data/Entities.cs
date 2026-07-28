@@ -206,6 +206,10 @@ public class Order
     public string? AhamoveOrderId { get; set; }
     public string? AhamoveTrackingLink { get; set; }
     public string? AhamoveStatus { get; set; }
+
+    // Đơn ghép chuyến giao
+    public bool IsGrouped { get; set; }
+    public string? GroupBatchCode { get; set; }
 }
 
 // Dòng sản phẩm trong đơn hàng

@@ -278,6 +278,10 @@ public class LalamoveService
             }
 
             var currentQuery = address;
+            if (!currentQuery.ToLower().Contains("hà nội") && !currentQuery.ToLower().Contains("ha noi") && !currentQuery.ToLower().Contains("hanoi"))
+            {
+                currentQuery += ", Hà Nội, Việt Nam";
+            }
             while (!string.IsNullOrWhiteSpace(currentQuery))
             {
                 var url = $"https://nominatim.openstreetmap.org/search?q={Uri.EscapeDataString(currentQuery)}&format=json&limit=1";
@@ -341,4 +345,180 @@ public class LalamoveService
 
         return true;
     }
+
+    public async Task<(string QuotationId, long TotalFee, string SenderStopId, List<LalamoveMultiStopRecipient> Recipients)> EstimateMultiStopFeeAsync(
+        double senderLat, double senderLng, string senderAddress,
+        List<LalamoveMultiStopRecipient> recipients,
+        LalamoveOptions opts)
+    {
+        var path = "/v3/quotations";
+        var stopsList = new List<object>
+        {
+            new
+            {
+                coordinates = new
+                {
+                    lat = senderLat.ToString("F6", System.Globalization.CultureInfo.InvariantCulture),
+                    lng = senderLng.ToString("F6", System.Globalization.CultureInfo.InvariantCulture)
+                },
+                address = senderAddress
+            }
+        };
+
+        foreach (var r in recipients)
+        {
+            stopsList.Add(new
+            {
+                coordinates = new
+                {
+                    lat = r.Lat.ToString("F6", System.Globalization.CultureInfo.InvariantCulture),
+                    lng = r.Lng.ToString("F6", System.Globalization.CultureInfo.InvariantCulture)
+                },
+                address = r.Address
+            });
+        }
+
+        var payload = new
+        {
+            data = new
+            {
+                serviceType = opts.ServiceType ?? "MOTORCYCLE",
+                language = "vi_VN",
+                stops = stopsList.ToArray()
+            }
+        };
+
+        var body = JsonSerializer.Serialize(payload);
+        var request = CreateRequest("POST", path, body, opts);
+        var response = await _http.SendAsync(request);
+        var contentStr = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("Lalamove MultiStop Estimate Fee failed: {Status} {Response}", response.StatusCode, contentStr);
+            throw new Exception($"Lỗi tính phí ghép đơn Lalamove: {contentStr}");
+        }
+
+        using var doc = JsonDocument.Parse(contentStr);
+        var root = doc.RootElement;
+        var data = root.GetProperty("data");
+        var quotationId = data.GetProperty("quotationId").GetString() ?? "";
+
+        string senderStopId = "";
+        var stopsArray = data.GetProperty("stops");
+        if (stopsArray.ValueKind == JsonValueKind.Array && stopsArray.GetArrayLength() > 0)
+        {
+            var s0 = stopsArray[0];
+            if (s0.TryGetProperty("id", out var id0)) senderStopId = id0.GetString() ?? "";
+            else if (s0.TryGetProperty("stopId", out var sId0)) senderStopId = sId0.GetString() ?? "";
+
+            int idx = 0;
+            foreach (var stop in stopsArray.EnumerateArray().Skip(1))
+            {
+                string rStopId = "";
+                if (stop.TryGetProperty("id", out var idProp)) rStopId = idProp.GetString() ?? "";
+                else if (stop.TryGetProperty("stopId", out var sIdProp)) rStopId = sIdProp.GetString() ?? "";
+
+                if (idx < recipients.Count)
+                {
+                    recipients[idx].StopId = rStopId;
+                }
+                idx++;
+            }
+        }
+
+        long totalFee = 0;
+        if (data.TryGetProperty("priceBreakdown", out var priceBreakdown) &&
+            priceBreakdown.TryGetProperty("total", out var totalProp))
+        {
+            var totalStr = totalProp.GetString() ?? "0";
+            if (double.TryParse(totalStr, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var feeVal))
+            {
+                totalFee = (long)Math.Round(feeVal);
+            }
+        }
+
+        return (quotationId, totalFee, senderStopId, recipients);
+    }
+
+    public async Task<(string OrderId, string ShareLink)> CreateMultiStopOrderAsync(
+        string quotationId,
+        string senderStopId,
+        string senderName, string senderPhone,
+        List<LalamoveMultiStopRecipient> recipients,
+        LalamoveOptions opts)
+    {
+        var path = "/v3/orders";
+        var recList = recipients.Select(r => new
+        {
+            stopId = r.StopId,
+            name = string.IsNullOrWhiteSpace(r.Name) ? "Khách hàng" : r.Name,
+            phone = r.Phone.StartsWith("+84") ? r.Phone : "+84" + r.Phone.TrimStart('0')
+        }).ToArray();
+
+        var payload = new
+        {
+            data = new
+            {
+                quotationId = quotationId,
+                sender = new
+                {
+                    stopId = senderStopId,
+                    name = senderName,
+                    phone = senderPhone.StartsWith("+84") ? senderPhone : "+84" + senderPhone.TrimStart('0')
+                },
+                recipients = recList
+            }
+        };
+
+        var body = JsonSerializer.Serialize(payload);
+        var request = CreateRequest("POST", path, body, opts);
+        var response = await _http.SendAsync(request);
+        var contentStr = await response.Content.ReadAsStringAsync();
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogError("Lalamove MultiStop Create Order failed: {Status} {Response}", response.StatusCode, contentStr);
+            throw new Exception($"Lỗi đặt chuyến Lalamove ghép: {contentStr}");
+        }
+
+        using var doc = JsonDocument.Parse(contentStr);
+        var root = doc.RootElement;
+        var data = root.GetProperty("data");
+        var orderId = data.GetProperty("orderId").GetString() ?? "";
+
+        string shareLink = "";
+        try
+        {
+            await Task.Delay(500);
+            var detailPath = $"/v3/orders/{orderId}";
+            var detailRequest = CreateRequest("GET", detailPath, "", opts);
+            var detailResponse = await _http.SendAsync(detailRequest);
+            var detailContentStr = await detailResponse.Content.ReadAsStringAsync();
+
+            if (detailResponse.IsSuccessStatusCode)
+            {
+                using var detailDoc = JsonDocument.Parse(detailContentStr);
+                if (detailDoc.RootElement.TryGetProperty("data", out var dData) &&
+                    dData.TryGetProperty("shareLink", out var sl))
+                {
+                    shareLink = sl.GetString() ?? "";
+                }
+            }
+        }
+        catch { }
+
+        return ("Lala:" + orderId, shareLink);
+    }
+}
+
+public class LalamoveMultiStopRecipient
+{
+    public int OrderId { get; set; }
+    public string Name { get; set; } = "";
+    public string Phone { get; set; } = "";
+    public string Address { get; set; } = "";
+    public double Lat { get; set; }
+    public double Lng { get; set; }
+    public string StopId { get; set; } = "";
 }
