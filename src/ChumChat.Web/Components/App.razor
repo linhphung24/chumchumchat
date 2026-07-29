@@ -104,6 +104,21 @@
             }
             return null;
         };
+
+        window.printReceiptDiv = function(divId) {
+            var element = document.getElementById(divId);
+            if (!element) return;
+            var printWin = window.open('', '_blank', 'width=400,height=650');
+            printWin.document.write('<html><head><title>Hóa đơn iPOS - Chum Chum Bakery</title><style>body { font-family: "Courier New", Courier, monospace; margin: 0; padding: 10px; background: #fff; } @@page { size: 80mm auto; margin: 0; }</style></head><body>');
+            printWin.document.write(element.innerHTML);
+            printWin.document.write('</body></html>');
+            printWin.document.close();
+            printWin.focus();
+            setTimeout(function() {
+                printWin.print();
+                printWin.close();
+            }, 300);
+        };
     </script>
 </body>
 

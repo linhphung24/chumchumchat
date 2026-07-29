@@ -826,6 +826,15 @@ public class InboxService(
         events.NotifyChanged();
     }
 
+    public async Task ClearAllOrdersAsync()
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        db.OrderItems.RemoveRange(db.OrderItems);
+        db.Orders.RemoveRange(db.Orders);
+        await db.SaveChangesAsync();
+        events.NotifyChanged();
+    }
+
     private static string Truncate(string value, int max) =>
         value.Length <= max ? value : value[..max] + "…";
 }

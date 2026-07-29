@@ -13,9 +13,9 @@
 
 <PageTitle>ChumChat — Tổng hợp Đơn hàng & Ghép chuyến giao</PageTitle>
 
-<div class="app-layout-wrapper" style="display: flex; flex-direction: column; height: 100vh; overflow: hidden; background: #f8fafc;">
+<div class="app-layout-wrapper" style="min-height: 100vh; background: #f8fafc; display: flex; flex-direction: column;">
     <!-- ===== TOP NAVIGATION HEADER BAR ===== -->
-    <header class="main-top-navbar" style="background: #ffffff; border-bottom: 1px solid #e5e7eb; padding: 0 16px; height: 52px; min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.03); z-index: 100; flex-shrink: 0;">
+    <header class="main-top-navbar" style="position: sticky; top: 0; background: #ffffff; border-bottom: 1px solid #e5e7eb; padding: 0 16px; height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.03); z-index: 100; flex-shrink: 0;">
         <!-- Logo & Status -->
         <div style="display: flex; align-items: center; gap: 10px;">
             <h1 style="margin: 0; font-size: 1.25rem; font-weight: 800; background: linear-gradient(135deg, #2563eb, #7c3aed); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">ChumChat</h1>
@@ -51,7 +51,7 @@
     </header>
 
     <!-- ===== MAIN CONTENT BODY ===== -->
-    <div style="flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; max-width: 1400px; margin: 0 auto; width: 100%;">
+    <div style="flex: 1; padding: 20px; display: flex; flex-direction: column; gap: 20px; max-width: 1400px; margin: 0 auto; width: 100%;">
 
         <!-- HEADER SUMMARY METRICS -->
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
@@ -205,8 +205,14 @@
                         <span>❌</span> Hủy ghép
                     </button>
                 }
-                <button @onclick="PrintManifest" style="padding: 8px 14px; border-radius: 8px; background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
-                    <span>🖨</span> In danh sách đơn ghép
+                @if (isAdmin)
+                {
+                    <button @onclick="ConfirmClearAllOrders" style="padding: 8px 14px; border-radius: 8px; background: #fff1f2; color: #dc2626; border: 1px solid #fecaca; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;" title="Xóa toàn bộ đơn hàng test trong CSDL">
+                        <span>🗑️</span> Xóa đơn test
+                    </button>
+                }
+                <button @onclick="OpenPrintIposModal" style="padding: 8px 16px; border-radius: 8px; background: #0284c7; color: #ffffff; border: none; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(2,132,199,0.25);">
+                    <span>🧾</span> In Hóa Đơn iPOS Ghép
                 </button>
             </div>
         </div>
@@ -244,7 +250,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var o in orders)
+                            @foreach (var o in pagedOrders)
                             {
                                 var isSel = selectedOrderIds.Contains(o.Id);
                                 var areaTag = ExtractArea(o.CustomerAddress);
@@ -356,6 +362,47 @@
                         </tbody>
                     </table>
                 </div>
+
+                <!-- PAGINATION CONTROL BAR -->
+                @if (orders.Count > 0)
+                {
+                    <div style="padding: 12px 16px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px;">
+                        <div style="color: #64748b; font-weight: 500;">
+                            Hiển thị <strong>@(((currentPage - 1) * pageSize) + 1)</strong> - <strong>@(Math.Min(currentPage * pageSize, orders.Count))</strong> trong tổng số <strong>@orders.Count</strong> đơn hàng
+                        </div>
+
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <span style="color: #64748b; font-size: 12px;">Số đơn/trang:</span>
+                                <select @bind="pageSize" @bind:after="OnPageSizeChanged" style="padding: 4px 8px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 12px; outline: none; background: #fff;">
+                                    <option value="10">10</option>
+                                    <option value="15">15</option>
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </select>
+                            </div>
+
+                            <div style="display: flex; align-items: center; gap: 4px;">
+                                <button @onclick="GoToFirstPage" disabled="@(currentPage == 1)" style="padding: 5px 10px; border-radius: 6px; background: #ffffff; border: 1px solid #cbd5e1; cursor: pointer; font-size: 12px; font-weight: 600; color: #334155; opacity: @(currentPage == 1 ? "0.5" : "1");">
+                                    ⏮️
+                                </button>
+                                <button @onclick="GoToPrevPage" disabled="@(currentPage == 1)" style="padding: 5px 10px; border-radius: 6px; background: #ffffff; border: 1px solid #cbd5e1; cursor: pointer; font-size: 12px; font-weight: 600; color: #334155; opacity: @(currentPage == 1 ? "0.5" : "1");">
+                                    ◀️ Trước
+                                </button>
+
+                                <span style="font-weight: 700; color: #1e293b; padding: 0 8px;">Trang @currentPage / @totalPages</span>
+
+                                <button @onclick="GoToNextPage" disabled="@(currentPage >= totalPages)" style="padding: 5px 10px; border-radius: 6px; background: #ffffff; border: 1px solid #cbd5e1; cursor: pointer; font-size: 12px; font-weight: 600; color: #334155; opacity: @(currentPage >= totalPages ? "0.5" : "1");">
+                                    Sau ▶️
+                                </button>
+                                <button @onclick="GoToLastPage" disabled="@(currentPage >= totalPages)" style="padding: 5px 10px; border-radius: 6px; background: #ffffff; border: 1px solid #cbd5e1; cursor: pointer; font-size: 12px; font-weight: 600; color: #334155; opacity: @(currentPage >= totalPages ? "0.5" : "1");">
+                                    ⏭️
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                }
             }
         </div>
     </div>
@@ -445,6 +492,123 @@
             <div style="display: flex; justify-content: flex-end; gap: 10px;">
                 <button @onclick="() => showGroupModal = false" style="padding: 9px 16px; border-radius: 8px; background: #f1f5f9; color: #475569; border: none; font-size: 13px; font-weight: 600; cursor: pointer;">Hủy bỏ</button>
                 <button @onclick="ConfirmGroupBatch" style="padding: 9px 18px; border-radius: 8px; background: #9333ea; color: #ffffff; border: none; font-size: 13px; font-weight: 700; cursor: pointer;">Xác nhận Ghép đơn</button>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- MODAL POPUP IN HÓA ĐƠN GHẾP IPOS 80MM -->
+@if (showPrintIposModal)
+{
+    <div style="position: fixed; inset: 0; background: rgba(15,23,42,0.65); backdrop-filter: blur(4px); z-index: 2000; display: flex; align-items: center; justify-content: center; padding: 16px;">
+        <div style="background: #ffffff; border-radius: 16px; width: 100%; max-width: 440px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2); overflow: hidden; display: flex; flex-direction: column; max-height: 92vh;">
+            <div style="padding: 14px 18px; background: #0f172a; color: #ffffff; display: flex; align-items: center; justify-content: space-between;">
+                <h3 style="margin: 0; font-size: 15px; font-weight: 700; display: flex; align-items: center; gap: 8px;">
+                    <span>🧾</span> Hóa đơn Ghép Đơn iPOS (80mm)
+                </h3>
+                <button @onclick="() => showPrintIposModal = false" style="background: transparent; border: none; color: #ffffff; font-size: 20px; cursor: pointer;">✕</button>
+            </div>
+
+            <!-- Receipt Thermal Content Box -->
+            <div style="padding: 16px; overflow-y: auto; flex: 1; background: #f1f5f9; display: flex; justify-content: center;">
+                <div id="ipos-thermal-receipt" style="width: 300px; background: #ffffff; padding: 16px 12px; border: 1px dashed #cbd5e1; font-family: 'Courier New', Courier, monospace; font-size: 12px; color: #000; line-height: 1.35; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                    
+                    <div style="text-align: center; font-weight: 900; font-size: 17px; letter-spacing: -0.5px; margin-bottom: 2px;">Chum Chum Bakery</div>
+                    <div style="text-align: center; font-size: 10px;">Đ/C: Chân cầu vượt Tương Chúc, thôn Tương Chúc, Đường Ngũ Hiệp, Xã Nam Phù, Thanh Trì</div>
+                    <div style="text-align: center; font-size: 10px;">Hotline: 0983.112.676 / 0782.393.313</div>
+                    <div style="text-align: center; font-size: 10px;">Chủ TK: CHUMCHUM Co.,Ltd Ngân hàng Vietcombank</div>
+                    <div style="text-align: center; font-size: 10px; font-weight: bold;">VCB Số TK: 7672939434</div>
+                    
+                    <div style="border-bottom: 1px dashed #000; margin: 8px 0;"></div>
+                    
+                    <div style="text-align: center; font-weight: bold; font-size: 14px;">HÓA ĐƠN TẠM TÍNH</div>
+                    <div style="text-align: center; font-size: 10px; font-style: italic; margin-bottom: 4px;">TN: LIÊN</div>
+                    
+                    <div style="font-size: 11px; margin-bottom: 2px;">
+                        <strong>Số HĐ:</strong> @(string.IsNullOrWhiteSpace(printBatchCode) ? "CH-" + DateTime.Now.ToString("yyyyMMdd-HHmm") : printBatchCode)
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 2px;">
+                        <span>Bàn: <strong>HÀNG GIAO SỈ</strong></span>
+                        <span>Ngày: <strong>@DateTime.Now.ToString("dd.MM.yyyy")</strong></span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 10px; margin-bottom: 6px;">
+                        <span>Giờ vào: <strong>@DateTime.Now.ToString("HH:mm")</strong></span>
+                        <span>Giờ ra: <strong>@DateTime.Now.ToString("HH:mm")</strong></span>
+                    </div>
+                    <div style="font-size: 10px; text-align: right; margin-bottom: 6px;">
+                        Đơn Vị Tính: <strong>100g</strong>
+                    </div>
+
+                    <table style="width: 100%; font-size: 11px; border-collapse: collapse; margin-top: 4px; border-top: 1px solid #000; border-bottom: 1px solid #000;">
+                        <thead>
+                            <tr style="border-bottom: 1px solid #000; text-align: left; font-size: 10px;">
+                                <th style="padding: 3px 1px; width: 18px;">TT</th>
+                                <th style="padding: 3px 2px;">Tên món</th>
+                                <th style="padding: 3px 1px; text-align: center; width: 22px;">SL</th>
+                                <th style="padding: 3px 2px; text-align: right; width: 45px;">Đ.Giá</th>
+                                <th style="padding: 3px 2px; text-align: right; width: 25px;">CK</th>
+                                <th style="padding: 3px 2px; text-align: right; width: 50px;">T.Tiền</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                int idx = 1;
+                                foreach (var item in printAggregatedItems)
+                                {
+                                    <tr style="border-bottom: 1px dotted #ccc;">
+                                        <td style="padding: 3px 1px; vertical-align: top;">@idx</td>
+                                        <td style="padding: 3px 2px; font-weight: bold; vertical-align: top;">@item.ProductName</td>
+                                        <td style="padding: 3px 1px; text-align: center; vertical-align: top;">@item.Quantity</td>
+                                        <td style="padding: 3px 2px; text-align: right; vertical-align: top;">@item.UnitPrice.ToString("N0")</td>
+                                        <td style="padding: 3px 2px; text-align: right; vertical-align: top;">0%</td>
+                                        <td style="padding: 3px 2px; text-align: right; font-weight: bold; vertical-align: top;">@item.TotalPrice.ToString("N0")</td>
+                                    </tr>
+                                    idx++;
+                                }
+                            }
+                        </tbody>
+                    </table>
+
+                    <div style="margin-top: 6px; font-size: 11px; text-align: right;">
+                        <div style="display: flex; justify-content: space-between; font-weight: bold;">
+                            <span>Thành tiền:</span>
+                            <span>@printTotalAmount.ToString("N0")</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; font-weight: 900; font-size: 13px; margin-top: 4px; border-top: 1px dashed #000; padding-top: 4px;">
+                            <span>Tiền Thanh Toán:</span>
+                            <span>@printTotalAmount.ToString("N0")</span>
+                        </div>
+                    </div>
+
+                    <div style="border-bottom: 1px dashed #000; margin: 8px 0;"></div>
+
+                    <div style="text-align: center; font-style: italic; font-weight: bold; font-size: 11px; margin-bottom: 8px;">
+                        Cảm ơn Quý khách và hẹn gặp lại!
+                    </div>
+
+                    <!-- Customer Delivery List Details -->
+                    <div style="border-top: 1px solid #000; padding-top: 6px; margin-top: 6px;">
+                        <div style="font-size: 10px; font-weight: bold; text-align: center; margin-bottom: 4px;">DIỄN GIẢI ĐIỂM GIAO HÀNG (@printSelectedOrders.Count ĐƠN):</div>
+                        @foreach (var o in printSelectedOrders)
+                        {
+                            <div style="font-size: 10px; margin-bottom: 4px; padding: 4px; background: #fafafa; border-radius: 4px; border: 1px solid #eee;">
+                                <div><strong>@o.Title</strong> - @o.CustomerPhone</div>
+                                <div>📍 @o.CustomerAddress</div>
+                            </div>
+                        }
+                    </div>
+
+                    <div style="text-align: center; margin-top: 8px;">
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https://chat.chumchumbakery.com/don-hang" style="width: 110px; height: 110px;" alt="QR" />
+                    </div>
+                </div>
+            </div>
+
+            <div style="padding: 14px 18px; background: #ffffff; border-top: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between;">
+                <button @onclick="() => showPrintIposModal = false" style="padding: 8px 16px; border-radius: 8px; background: #f1f5f9; color: #475569; border: none; font-size: 13px; font-weight: 600; cursor: pointer;">Đóng</button>
+                <button @onclick="TriggerBrowserPrint" style="padding: 9px 20px; border-radius: 8px; background: #0284c7; color: #ffffff; border: none; font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; box-shadow: 0 2px 4px rgba(2,132,199,0.25);">
+                    <span>🖨️</span> In Hóa Đơn iPOS (80mm)
+                </button>
             </div>
         </div>
     </div>
@@ -619,6 +783,7 @@
     private async Task LoadOrdersAsync()
     {
         isLoading = true;
+        currentPage = 1;
         bool? isGroupedFilter = selectedGroupFilter switch
         {
             "grouped" => true,
@@ -649,6 +814,96 @@
         selectedGroupFilter = "all";
         selectedStatusFilter = "active";
         await LoadOrdersAsync();
+    }
+
+    // Pagination state & helpers
+    private int currentPage = 1;
+    private int pageSize = 15;
+    private int totalPages => Math.Max(1, (int)Math.Ceiling((double)orders.Count / pageSize));
+    private IEnumerable<Order> pagedOrders => orders.Skip((currentPage - 1) * pageSize).Take(pageSize);
+
+    private void OnPageSizeChanged() => currentPage = 1;
+    private void GoToFirstPage() => currentPage = 1;
+    private void GoToPrevPage() => currentPage = Math.Max(1, currentPage - 1);
+    private void GoToNextPage() => currentPage = Math.Min(totalPages, currentPage + 1);
+    private void GoToLastPage() => currentPage = totalPages;
+
+    // iPOS Print Thermal Receipt Modal State
+    private bool showPrintIposModal = false;
+    private string printBatchCode = "";
+    private List<Order> printSelectedOrders = [];
+    private List<AggregatedItem> printAggregatedItems = [];
+    private long printTotalAmount = 0;
+
+    public class AggregatedItem
+    {
+        public string ProductName { get; set; } = "";
+        public int Quantity { get; set; }
+        public long UnitPrice { get; set; }
+        public long TotalPrice => Quantity * UnitPrice;
+    }
+
+    private void OpenPrintIposModal()
+    {
+        var targetOrders = selectedOrderIds.Count > 0
+            ? orders.Where(o => selectedOrderIds.Contains(o.Id)).ToList()
+            : pagedOrders.ToList();
+
+        if (targetOrders.Count == 0)
+        {
+            JS.InvokeVoidAsync("alert", "Không có đơn hàng nào để in Hóa đơn iPOS!");
+            return;
+        }
+
+        printSelectedOrders = targetOrders;
+        printBatchCode = targetOrders.FirstOrDefault(o => !string.IsNullOrEmpty(o.GroupBatchCode))?.GroupBatchCode ?? $"CH-{DateTime.Now:yyyyMMdd-HHmm}";
+        
+        var itemMap = new Dictionary<string, AggregatedItem>();
+        long total = 0;
+        foreach (var o in targetOrders)
+        {
+            total += o.Amount;
+            if (o.Items != null)
+            {
+                foreach (var item in o.Items)
+                {
+                    if (itemMap.ContainsKey(item.ProductName))
+                    {
+                        itemMap[item.ProductName].Quantity += item.Quantity;
+                    }
+                    else
+                    {
+                        var uPrice = item.UnitPrice;
+                        itemMap[item.ProductName] = new AggregatedItem
+                        {
+                            ProductName = item.ProductName,
+                            Quantity = item.Quantity,
+                            UnitPrice = uPrice
+                        };
+                    }
+                }
+            }
+        }
+        printAggregatedItems = itemMap.Values.ToList();
+        printTotalAmount = total;
+        showPrintIposModal = true;
+    }
+
+    private async Task TriggerBrowserPrint()
+    {
+        await JS.InvokeVoidAsync("printReceiptDiv", "ipos-thermal-receipt");
+    }
+
+    private async Task ConfirmClearAllOrders()
+    {
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", "⚠️ Bạn có chắc chắn muốn XÓA SẠCH TOÀN BỘ đơn hàng test trong CSDL?\nHành động này không thể hoàn tác!");
+        if (confirmed)
+        {
+            await InboxSvc.ClearAllOrdersAsync();
+            selectedOrderIds.Clear();
+            await LoadOrdersAsync();
+            await JS.InvokeVoidAsync("alert", "✓ Đã xóa sạch toàn bộ đơn hàng test thành công!");
+        }
     }
 
     private void ToggleSelectOrder(int orderId)
@@ -700,11 +955,6 @@
         await InboxSvc.BatchUngroupOrdersAsync(selectedOrderIds.ToList());
         selectedOrderIds.Clear();
         await LoadOrdersAsync();
-    }
-
-    private async Task PrintManifest()
-    {
-        await JS.InvokeVoidAsync("window.print");
     }
 
     private string ExtractArea(string address)

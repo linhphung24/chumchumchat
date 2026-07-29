@@ -164,6 +164,13 @@ public class MobileApiController(
         return Ok(new { success = true });
     }
 
+    [HttpPost("orders/clear")]
+    public async Task<IActionResult> ClearAllOrders()
+    {
+        await inbox.ClearAllOrdersAsync();
+        return Ok(new { success = true });
+    }
+
     [HttpPost("orders/lalamove-estimate")]
     public async Task<IActionResult> EstimateLalamoveGroupFee([FromBody] MobileGroupOrdersRequest req, [FromServices] LalamoveService lalamoveSvc, [FromServices] ChannelSettingsStore store)
     {
