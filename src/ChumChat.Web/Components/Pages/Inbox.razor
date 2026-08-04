@@ -446,6 +446,41 @@
                             💾 Lưu thông tin khách hàng
                         </button>
                     </div>
+
+                    <!-- AI CUSTOMER EVALUATION CARD -->
+                    <div style="background: #ffffff; border: 1px solid #e2e8f0; padding: 12px; border-radius: 10px; margin-bottom: 15px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+                            <h4 style="margin: 0; font-size: 13px; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 6px;">
+                                <span>🤖</span> Đánh giá & Tiêu chí Khách
+                            </h4>
+                            <button @onclick="AnalyzeCustomerWithAi" disabled="@isAnalyzingCustomer" style="padding: 4px 10px; border-radius: 6px; background: #faf5ff; color: #9333ea; border: 1px solid #d8b4fe; font-size: 11px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                                <span>✨</span> @(isAnalyzingCustomer ? "Đang phân tích..." : "AI Đánh giá")
+                            </button>
+                        </div>
+
+                        <!-- Customer Badges List -->
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px;">
+                            @if (selected != null && !string.IsNullOrWhiteSpace(selected.CustomerTags))
+                            {
+                                @foreach (var tag in selected.CustomerTags.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                                {
+                                    var (bg, color, border) = GetTagBadgeStyle(tag);
+                                    <span style="font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 12px; background: @bg; color: @color; border: 1px solid @border;">
+                                        @tag.Trim()
+                                    </span>
+                                }
+                            }
+                            else
+                            {
+                                <span style="font-size: 11px; color: #94a3b8; font-style: italic;">Chưa có phân loại nhãn khách hàng</span>
+                            }
+                        </div>
+
+                        <!-- AI Customer Note -->
+                        <div style="font-size: 12px; color: #334155; background: #f8fafc; padding: 8px 10px; border-radius: 6px; border-left: 3px solid #9333ea; font-style: italic; line-height: 1.4;">
+                            @(string.IsNullOrWhiteSpace(selected?.AiCustomerNote) ? "Chưa có nhận xét hành vi từ AI. Bấm '✨ AI Đánh giá' để phân tích." : selected.AiCustomerNote)
+                        </div>
+                    </div>
                 </div>
 
                 <div class="panel-section orders-section">
@@ -1183,6 +1218,45 @@
         searchQuery = "";
         activeSearchQuery = null;
         await ReloadAsync();
+    }
+
+    private bool isAnalyzingCustomer = false;
+
+    private async Task AnalyzeCustomerWithAi()
+    {
+        if (selected == null) return;
+        isAnalyzingCustomer = true;
+        try
+        {
+            var updatedConv = await InboxSvc.AnalyzeCustomerProfileAsync(selected.Id, Ai);
+            if (updatedConv != null)
+            {
+                selected.CustomerTags = updatedConv.CustomerTags;
+                selected.AiCustomerNote = updatedConv.AiCustomerNote;
+            }
+        }
+        finally
+        {
+            isAnalyzingCustomer = false;
+        }
+    }
+
+    private (string Bg, string Color, string Border) GetTagBadgeStyle(string tag)
+    {
+        var t = tag.ToLowerInvariant();
+        if (t.Contains("chốt") && t.Contains("nhanh"))
+            return ("#f0fdf4", "#16a34a", "#bbf7d0"); // Green
+        if (t.Contains("tư vấn") && t.Contains("kỹ"))
+            return ("#fffbeb", "#d97706", "#fef3c7"); // Amber
+        if (t.Contains("sỉ") || t.Contains("lớn"))
+            return ("#faf5ff", "#9333ea", "#e9d5ff"); // Purple
+        if (t.Contains("ck") || t.Contains("chuyển khoản"))
+            return ("#eff6ff", "#2563eb", "#bfdbfe"); // Blue
+        if (t.Contains("cod") || t.Contains("tiền mặt"))
+            return ("#fff1f2", "#e11d48", "#fecdd3"); // Rose
+        if (t.Contains("thân thiết"))
+            return ("#fefce8", "#ca8a04", "#fef08a"); // Gold
+        return ("#f1f5f9", "#475569", "#cbd5e1"); // Slate
     }
 
     private async Task ReloadAsync()

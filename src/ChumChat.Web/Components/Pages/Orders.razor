@@ -268,6 +268,18 @@
                                         {
                                             <div style="font-size: 12px; color: #2563eb; font-family: monospace; font-weight: 600;">📞 @o.CustomerPhone</div>
                                         }
+                                        @if (o.Conversation != null && !string.IsNullOrWhiteSpace(o.Conversation.CustomerTags))
+                                        {
+                                            <div style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">
+                                                @foreach (var tag in o.Conversation.CustomerTags.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                                                {
+                                                    var (bg, color, border) = GetTagBadgeStyle(tag);
+                                                    <span style="font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px; background: @bg; color: @color; border: 1px solid @border;" title="@(o.Conversation.AiCustomerNote ?? "")">
+                                                        @tag.Trim()
+                                                    </span>
+                                                }
+                                            </div>
+                                        }
                                     </td>
                                     <td style="padding: 12px 14px; max-width: 260px;">
                                         @if (!string.IsNullOrWhiteSpace(areaTag))
@@ -955,6 +967,24 @@
         await InboxSvc.BatchUngroupOrdersAsync(selectedOrderIds.ToList());
         selectedOrderIds.Clear();
         await LoadOrdersAsync();
+    }
+
+    private (string Bg, string Color, string Border) GetTagBadgeStyle(string tag)
+    {
+        var t = tag.ToLowerInvariant();
+        if (t.Contains("chốt") && t.Contains("nhanh"))
+            return ("#f0fdf4", "#16a34a", "#bbf7d0"); // Green
+        if (t.Contains("tư vấn") && t.Contains("kỹ"))
+            return ("#fffbeb", "#d97706", "#fef3c7"); // Amber
+        if (t.Contains("sỉ") || t.Contains("lớn"))
+            return ("#faf5ff", "#9333ea", "#e9d5ff"); // Purple
+        if (t.Contains("ck") || t.Contains("chuyển khoản"))
+            return ("#eff6ff", "#2563eb", "#bfdbfe"); // Blue
+        if (t.Contains("cod") || t.Contains("tiền mặt"))
+            return ("#fff1f2", "#e11d48", "#fecdd3"); // Rose
+        if (t.Contains("thân thiết"))
+            return ("#fefce8", "#ca8a04", "#fef08a"); // Gold
+        return ("#f1f5f9", "#475569", "#cbd5e1"); // Slate
     }
 
     private string ExtractArea(string address)

@@ -61,6 +61,10 @@ public class Conversation
     public string CustomerPhone { get; set; } = "";
     public string CustomerAddress { get; set; } = "";
  
+    // Ghi chú & Đánh giá phân loại khách hàng do AI / Hệ thống phân tích (VD: "⚡ Chốt nhanh", "💳 CK trước", "📦 Khách sỉ", "🧐 Cần tư vấn kỹ")
+    public string? CustomerTags { get; set; } = "";
+    public string? AiCustomerNote { get; set; } = "";
+
     public List<Message> Messages { get; set; } = [];
 }
 
@@ -175,6 +179,8 @@ public class Order
     public int Id { get; set; }
 
     public int ConversationId { get; set; }
+
+    public Conversation? Conversation { get; set; }
 
     public string Title { get; set; } = "";
 

@@ -693,6 +693,7 @@ public class InboxService(
         await using var db = await dbFactory.CreateDbContextAsync();
         var query = db.Orders
             .Include(o => o.Items)
+            .Include(o => o.Conversation)
             .AsNoTracking()
             .AsQueryable();
 
@@ -833,6 +834,25 @@ public class InboxService(
         db.Orders.RemoveRange(db.Orders);
         await db.SaveChangesAsync();
         events.NotifyChanged();
+    }
+
+    public async Task<Conversation?> AnalyzeCustomerProfileAsync(int conversationId, AiSuggestionService aiSvc)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var conv = await db.Conversations.Include(c => c.Messages).FirstOrDefaultAsync(c => c.Id == conversationId);
+        if (conv == null) return null;
+
+        var orders = await db.Orders.Include(o => o.Items)
+            .Where(o => o.ConversationId == conversationId || (!string.IsNullOrEmpty(conv.CustomerPhone) && o.CustomerPhone == conv.CustomerPhone))
+            .ToListAsync();
+
+        var res = await aiSvc.EvaluateCustomerProfileAsync(conv, conv.Messages, orders);
+        conv.CustomerTags = string.Join(",", res.Tags);
+        conv.AiCustomerNote = res.Note;
+
+        await db.SaveChangesAsync();
+        events.NotifyChanged();
+        return conv;
     }
 
     private static string Truncate(string value, int max) =>

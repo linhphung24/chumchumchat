@@ -352,5 +352,96 @@ public class AiSuggestionService(
         return string.Join("", textParts);
     }
 
+    public record CustomerProfileResult(List<string> Tags, string Note);
+
+    public async Task<CustomerProfileResult> EvaluateCustomerProfileAsync(Conversation conversation, List<Message> messages, List<Order> customerOrders, CancellationToken ct = default)
+    {
+        var tags = new List<string>();
+
+        // 1. Thói quen thanh toán (Payment Habit)
+        int ckCount = customerOrders.Count(o => o.PaymentMethod.Contains("Chuyển khoản", StringComparison.OrdinalIgnoreCase) || o.PaymentMethod.Contains("CK", StringComparison.OrdinalIgnoreCase));
+        int codCount = customerOrders.Count(o => o.PaymentMethod.Contains("COD", StringComparison.OrdinalIgnoreCase) || o.PaymentMethod.Contains("Tiền mặt", StringComparison.OrdinalIgnoreCase));
+        if (ckCount > codCount && ckCount > 0)
+        {
+            tags.Add("💳 Thường CK trước");
+        }
+        else if (codCount > 0)
+        {
+            tags.Add("💵 Thường ship COD");
+        }
+
+        // 2. Đơn lớn / Khách sỉ / Khách thân thiết
+        long totalSpent = customerOrders.Sum(o => o.Amount);
+        int totalItems = customerOrders.SelectMany(o => o.Items).Sum(i => i.Quantity);
+        if (customerOrders.Count >= 3)
+        {
+            tags.Add("⭐ Khách thân thiết");
+        }
+        if (totalSpent >= 300000 || totalItems >= 5)
+        {
+            tags.Add("📦 Khách sỉ");
+        }
+
+        // 3. Phong cách chốt đơn
+        int msgCount = messages.Count;
+        if (msgCount <= 6 && customerOrders.Count > 0)
+        {
+            tags.Add("⚡ Chốt đơn nhanh");
+        }
+        else if (msgCount >= 10)
+        {
+            tags.Add("🧐 Cần tư vấn kỹ");
+        }
+
+        // Default fallback tag if none matched
+        if (tags.Count == 0 && customerOrders.Count > 0)
+        {
+            tags.Add("🛍️ Đã mua hàng");
+        }
+
+        // 4. AI sinh Note nhận xét ngắn gọn
+        string note = "";
+        if (IsConfigured)
+        {
+            try
+            {
+                var prompt = $"""
+                Bạn là trợ lý CRM phân tích tính cách & hành vi mua hàng của khách hàng.
+                Tên khách: {conversation.CustomerName} (SĐT: {conversation.CustomerPhone})
+                Số đơn hàng đã đặt: {customerOrders.Count}
+                Tổng chi tiêu: {totalSpent:N0}đ
+                Đoạn hội thoại vừa qua:
+                {string.Join("\n", messages.TakeLast(10).Select(m => $"{(m.Direction == MessageDirection.Inbound ? "Khách" : "Shop")}: {m.Text}"))}
+
+                Yêu cầu: Hãy đưa ra đúng 1 CÂU NHẬN XÉT NGẮN GỌN (dưới 25 từ) đánh giá tính cách khách (VD: dễ tư vấn/khó tính/cần tư vấn kỹ/chốt nhanh), thói quen mua hàng và loại bánh yêu thích.
+                Chỉ trả về duy nhất 1 câu nhận xét.
+                """;
+
+                var opts = settings.Ai;
+                var provider = opts.Provider?.ToLowerInvariant() ?? "anthropic";
+                var aiText = provider switch
+                {
+                    "gemini" => await GeminiAsync(opts, "Bạn là trợ lý CRM đánh giá khách hàng.", prompt, [], ct),
+                    "openai" => await OpenAiCompatibleAsync("https://api.openai.com/v1/chat/completions", opts, "Bạn là trợ lý CRM đánh giá khách hàng.", prompt, [], false, ct),
+                    _ => await AnthropicAsync(opts, "Bạn là trợ lý CRM đánh giá khách hàng.", prompt, [], ct),
+                };
+                note = aiText.Trim();
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Lỗi khi AI đánh giá tính cách khách hàng");
+            }
+        }
+
+        if (string.IsNullOrEmpty(note))
+        {
+            note = tags.Count > 0 
+                ? $"Đặc điểm: {string.Join(", ", tags)}." 
+                : "Khách hàng mới, chưa có thêm thông tin phân tích.";
+        }
+
+        return new CustomerProfileResult(tags, note);
+    }
+
     private static string Trim(string s) => s.Length <= 300 ? s : s[..300];
 }

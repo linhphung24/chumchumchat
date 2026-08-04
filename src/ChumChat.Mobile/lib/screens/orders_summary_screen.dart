@@ -508,6 +508,8 @@ class _OrdersSummaryScreenState extends State<OrdersSummaryScreen> {
                           final double amount = (o['amount'] ?? o['Amount'] ?? 0).toDouble();
                           final String areaTag = _extractArea(address);
                           final isSelected = _selectedOrderIds.contains(orderId);
+                          final conv = o['conversation'] ?? o['Conversation'];
+                          final String customerTags = conv != null ? (conv['customerTags'] ?? conv['CustomerTags'] ?? '') : '';
 
                           final itemsList = (o['items'] ?? o['Items'] ?? []) as List<dynamic>;
 
@@ -540,11 +542,37 @@ class _OrdersSummaryScreenState extends State<OrdersSummaryScreen> {
                                         },
                                       ),
                                       Expanded(
-                                        child: Text(
-                                          "#$orderId - $title",
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                          overflow: TextOverflow.ellipsis,
-                                          maxLines: 1,
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              "#$orderId - $title",
+                                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                              overflow: TextOverflow.ellipsis,
+                                              maxLines: 1,
+                                            ),
+                                            if (customerTags.isNotEmpty) ...[
+                                              const SizedBox(height: 3),
+                                              Wrap(
+                                                spacing: 4,
+                                                runSpacing: 4,
+                                                children: customerTags.split(',').where((t) => t.trim().isNotEmpty).map((tag) {
+                                                  return Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.purple.shade50,
+                                                      border: Border.all(color: Colors.purple.shade200),
+                                                      borderRadius: BorderRadius.circular(6),
+                                                    ),
+                                                    child: Text(
+                                                      tag.trim(),
+                                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.purple.shade900),
+                                                    ),
+                                                  );
+                                                }).toList(),
+                                              ),
+                                            ],
+                                          ],
                                         ),
                                       ),
                                       const SizedBox(width: 4),

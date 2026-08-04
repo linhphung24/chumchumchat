@@ -108,6 +108,18 @@ using (var scope = app.Services.CreateScope())
     if (!hasAddressColumn)
         db.Database.ExecuteSqlRaw("""ALTER TABLE "Conversations" ADD COLUMN "CustomerAddress" TEXT NOT NULL DEFAULT ''""");
 
+    var hasCustomerTagsColumn = db.Database
+        .SqlQueryRaw<int>("SELECT COUNT(*) AS \"Value\" FROM pragma_table_info('Conversations') WHERE name='CustomerTags'")
+        .AsEnumerable().First() > 0;
+    if (!hasCustomerTagsColumn)
+        db.Database.ExecuteSqlRaw("""ALTER TABLE "Conversations" ADD COLUMN "CustomerTags" TEXT NULL""");
+
+    var hasAiCustomerNoteColumn = db.Database
+        .SqlQueryRaw<int>("SELECT COUNT(*) AS \"Value\" FROM pragma_table_info('Conversations') WHERE name='AiCustomerNote'")
+        .AsEnumerable().First() > 0;
+    if (!hasAiCustomerNoteColumn)
+        db.Database.ExecuteSqlRaw("""ALTER TABLE "Conversations" ADD COLUMN "AiCustomerNote" TEXT NULL""");
+
     var hasAttachmentColumn = db.Database
         .SqlQueryRaw<int>("SELECT COUNT(*) AS \"Value\" FROM pragma_table_info('Messages') WHERE name='AttachmentUrl'")
         .AsEnumerable().First() > 0;

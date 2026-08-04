@@ -144,6 +144,14 @@ public class MobileApiController(
         return Ok(new { success = true });
     }
 
+    [HttpPost("conversations/{id}/analyze-customer")]
+    public async Task<IActionResult> AnalyzeCustomer(int id, [FromServices] AiSuggestionService aiSvc)
+    {
+        var conv = await inbox.AnalyzeCustomerProfileAsync(id, aiSvc);
+        if (conv == null) return NotFound(new { message = "Hội thoại không tồn tại" });
+        return Ok(new { customerTags = conv.CustomerTags, aiCustomerNote = conv.AiCustomerNote });
+    }
+
     [HttpPost("orders/group")]
     public async Task<IActionResult> GroupOrders([FromBody] MobileGroupOrdersRequest req)
     {
