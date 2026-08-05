@@ -92,12 +92,15 @@ public class MessengerPersonalOptions
 // Gợi ý trả lời bằng AI. Hỗ trợ nhiều nhà cung cấp: Claude/Anthropic, OpenAI (ChatGPT), Google Gemini, DeepSeek.
 public class AiOptions
 {
-    // "anthropic" | "openai" | "gemini" | "deepseek"
+    // "anthropic" | "openai" | "gemini" | "deepseek" | "ollama"
     public string Provider { get; set; } = "anthropic";
 
     public string ApiKey { get; set; } = "";
 
-    // Model của nhà cung cấp đang chọn (VD claude-opus-4-8, gpt-4o, gemini-2.5-flash, deepseek-chat)
+    // URL endpoint của Ollama local (mặc định: http://localhost:11434)
+    public string OllamaUrl { get; set; } = "http://localhost:11434";
+
+    // Model của nhà cung cấp đang chọn (VD claude-opus-4-8, gpt-4o, gemini-2.5-flash, deepseek-chat, qwen2.5)
     public string Model { get; set; } = "claude-opus-4-8";
 
     // Thông tin shop để AI trả lời đúng bối cảnh (tên shop, sản phẩm, chính sách, giọng điệu...)

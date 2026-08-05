@@ -7,6 +7,7 @@
 @inject IDbContextFactory<AppDbContext> DbFactory
 @inject IposSyncService IposSync
 @inject ChannelSettingsStore Store
+@inject IJSRuntime JS
 
 <PageTitle>Quản lý Thực Đơn iPOS & Tồn Kho - ChumChat</PageTitle>
 
@@ -50,7 +51,14 @@
             <h2 style="margin: 0 0 4px 0;">🍔 Quản Lý Thực Đơn iPOS & Tồn Kho</h2>
             <p class="subtitle" style="margin: 0; color: #6b7280; font-size: 13px;">Xem, tùy chỉnh thông tin món ăn và quản lý số lượng tồn kho để Trợ lý AI tư vấn chuẩn xác</p>
         </div>
-        <div class="header-actions" style="display: flex; gap: 8px;">
+        <div class="header-actions" style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn-export" @onclick="ExportExcelCsv" title="Tải toàn bộ thực đơn hiện tại ra file Excel/CSV để chỉnh sửa" style="background: #4f46e5; color: white; border: none; border-radius: 8px; padding: 8px 16px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                📤 Xuất Excel Thực Đơn
+            </button>
+            <label class="btn-import" title="Nhập file Excel/CSV đã chỉnh sửa để cập nhật giá, tồn kho hoặc thêm món" style="background: #8b5cf6; color: white; border: none; border-radius: 8px; padding: 8px 16px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; margin: 0;">
+                📥 Import Excel/CSV
+                <InputFile OnChange="OnCsvFileUploaded" accept=".csv,.xlsx,.txt" style="display: none;" />
+            </label>
             <button class="btn-sync @(isSyncing ? "spinning" : "")" @onclick="SyncFromIpos" disabled="@isSyncing" style="background: #0284c7; color: white; border: none; border-radius: 8px; padding: 8px 16px; font-weight: 600; cursor: pointer;">
                 🔄 @(isSyncing ? "Đang đồng bộ..." : "Đồng bộ Thực đơn iPOS")
             </button>
@@ -1026,5 +1034,219 @@
             banner = $"✕ Lỗi tạo món mới: {ex.Message}";
             bannerIsError = true;
         }
+    }
+
+    // ===== EXPORT & IMPORT EXCEL / CSV =====
+
+    private async Task ExportExcelCsv()
+    {
+        try
+        {
+            var sb = new System.Text.StringBuilder();
+            // BOM cho UTF-8 để Microsoft Excel nhận diện Tiếng Việt không lỗi font
+            sb.Append("\uFEFF");
+            sb.AppendLine("Id,Tên Món,Giá Bán,Mô Tả,Số Lượng Tồn,Trạng Thái (1: Bán / 0: Ngừng)");
+
+            foreach (var p in products)
+            {
+                var nameEsc = EscapeCsvField(p.Name);
+                var descEsc = EscapeCsvField(p.Description);
+                var isActiveNum = p.IsActive ? 1 : 0;
+                sb.AppendLine($"{p.Id},{nameEsc},{p.Price:F0},{descEsc},{p.StockQuantity},{isActiveNum}");
+            }
+
+            var fileName = $"Thuc_Don_ChumChat_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+            var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+            var base64 = Convert.ToBase64String(bytes);
+
+            await JS.InvokeVoidAsync("eval", $@"
+                (function() {{
+                    const link = document.createElement('a');
+                    link.download = '{fileName}';
+                    link.href = 'data:text/csv;charset=utf-8;base64,{base64}';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }})();
+            ");
+
+            banner = $"✔ Đã xuất {products.Count} món ra file Excel/CSV thành công!";
+            bannerIsError = false;
+        }
+        catch (Exception ex)
+        {
+            banner = $"✕ Lỗi xuất file: {ex.Message}";
+            bannerIsError = true;
+        }
+    }
+
+    private static string EscapeCsvField(string field)
+    {
+        if (string.IsNullOrEmpty(field)) return "";
+        if (field.Contains(',') || field.Contains('"') || field.Contains('\n') || field.Contains('\r'))
+        {
+            return $"\"{field.Replace("\"", "\"\"")}\"";
+        }
+        return field;
+    }
+
+    private async Task OnCsvFileUploaded(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+
+            using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            using var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8);
+            var content = await reader.ReadToEndAsync();
+
+            var lines = ParseCsvLines(content);
+            if (lines.Count <= 1)
+            {
+                banner = "✕ File không chứa dữ liệu sản phẩm hợp lệ!";
+                bannerIsError = true;
+                return;
+            }
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            var existingProducts = await db.Products.ToDictionaryAsync(p => p.Id);
+
+            int updatedCount = 0;
+            int addedCount = 0;
+
+            // Bỏ dòng tiêu đề (Index 0)
+            for (int i = 1; i < lines.Count; i++)
+            {
+                var cols = lines[i];
+                if (cols.Count < 2) continue;
+
+                int.TryParse(cols[0].Trim(), out var id);
+                var name = cols.Count > 1 ? cols[1].Trim() : "";
+                if (string.IsNullOrWhiteSpace(name)) continue;
+
+                long.TryParse(cols.Count > 2 ? cols[2].Trim() : "0", out var price);
+                var desc = cols.Count > 3 ? cols[3].Trim() : "";
+                int.TryParse(cols.Count > 4 ? cols[4].Trim() : "999", out var stock);
+                var activeStr = cols.Count > 5 ? cols[5].Trim() : "1";
+                bool isActive = activeStr == "1" || activeStr.Equals("true", StringComparison.OrdinalIgnoreCase);
+
+                if (id > 0 && existingProducts.TryGetValue(id, out var pExisting))
+                {
+                    // Cập nhật sản phẩm đã có
+                    pExisting.Name = name;
+                    pExisting.Price = price;
+                    pExisting.Description = desc;
+                    pExisting.StockQuantity = stock;
+                    pExisting.IsActive = isActive;
+                    db.Products.Update(pExisting);
+                    updatedCount++;
+                }
+                else
+                {
+                    // Thêm sản phẩm mới
+                    var pNew = new Product
+                    {
+                        Name = name,
+                        Price = price,
+                        Description = desc,
+                        StockQuantity = stock,
+                        IsActive = isActive
+                    };
+                    db.Products.Add(pNew);
+                    addedCount++;
+                }
+            }
+
+            await db.SaveChangesAsync();
+            await LoadProducts();
+
+            banner = $"✔ Đã import thành công! (Cập nhật {updatedCount} món, Thêm mới {addedCount} món)";
+            bannerIsError = false;
+        }
+        catch (Exception ex)
+        {
+            banner = $"✕ Lỗi import file: {ex.Message}";
+            bannerIsError = true;
+        }
+    }
+
+    private static List<List<string>> ParseCsvLines(string text)
+    {
+        var result = new List<List<string>>();
+        if (string.IsNullOrWhiteSpace(text)) return result;
+
+        if (text.StartsWith("\uFEFF")) text = text[1..];
+
+        var currentLine = new List<string>();
+        var currentToken = new System.Text.StringBuilder();
+        bool inQuotes = false;
+
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+
+            if (inQuotes)
+            {
+                if (c == '"')
+                {
+                    if (i + 1 < text.Length && text[i + 1] == '"')
+                    {
+                        currentToken.Append('"');
+                        i++;
+                    }
+                    else
+                    {
+                        inQuotes = false;
+                    }
+                }
+                else
+                {
+                    currentToken.Append(c);
+                }
+            }
+            else
+            {
+                if (c == '"')
+                {
+                    inQuotes = true;
+                }
+                else if (c == ',')
+                {
+                    currentLine.Add(currentToken.ToString());
+                    currentToken.Clear();
+                }
+                else if (c == '\r')
+                {
+                    if (i + 1 < text.Length && text[i + 1] == '\n') i++;
+                    currentLine.Add(currentToken.ToString());
+                    currentToken.Clear();
+                    if (currentLine.Any(s => !string.IsNullOrWhiteSpace(s)))
+                        result.Add(currentLine);
+                    currentLine = new List<string>();
+                }
+                else if (c == '\n')
+                {
+                    currentLine.Add(currentToken.ToString());
+                    currentToken.Clear();
+                    if (currentLine.Any(s => !string.IsNullOrWhiteSpace(s)))
+                        result.Add(currentLine);
+                    currentLine = new List<string>();
+                }
+                else
+                {
+                    currentToken.Append(c);
+                }
+            }
+        }
+
+        if (currentToken.Length > 0 || currentLine.Count > 0)
+        {
+            currentLine.Add(currentToken.ToString());
+            if (currentLine.Any(s => !string.IsNullOrWhiteSpace(s)))
+                result.Add(currentLine);
+        }
+
+        return result;
     }
 }

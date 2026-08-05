@@ -252,9 +252,17 @@ public class AutoReplyService(
                 ? c[0].GetProperty("text").GetString() ?? "" : "";
         }
 
-        var url = provider == "deepseek" ? "https://api.deepseek.com/chat/completions" : "https://api.openai.com/v1/chat/completions";
+        var url = provider switch
+        {
+            "deepseek" => "https://api.deepseek.com/chat/completions",
+            "ollama" => $"{opts.OllamaUrl.TrimEnd('/')}/v1/chat/completions",
+            _ => "https://api.openai.com/v1/chat/completions"
+        };
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
-        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", opts.ApiKey);
+        if (!string.IsNullOrWhiteSpace(opts.ApiKey))
+        {
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", opts.ApiKey);
+        }
         request.Content = new StringContent(JsonSerializer.Serialize(new
         {
             model = opts.Model,

@@ -85,23 +85,43 @@
             }
         </div>
         <details class="guide">
-            <summary>📖 Cách lấy API key cho @ProviderLabel</summary>
+            <summary>📖 Cách thiết lập / kết nối @ProviderLabel</summary>
             <div class="guide-inner">@((MarkupString)ProviderGuide)</div>
         </details>
         <div class="fields">
-            <label>API Key <input type="password" @bind="ai.ApiKey" placeholder="@KeyPlaceholder" /></label>
-            <label>Model
-                <select @bind="ai.Model">
-                    @foreach (var (val, label) in ModelOptions)
-                    {
-                        <option value="@val">@label</option>
-                    }
-                </select>
-            </label>
+            @if (ai.Provider == "ollama")
+            {
+                <label>Ollama Host URL <input type="text" @bind="ai.OllamaUrl" placeholder="http://localhost:11434" /></label>
+                <label>Tên Model Ollama
+                    <input type="text" @bind="ai.Model" placeholder="qwen2.5 / llama3.2..." list="ollama-model-list" />
+                    <datalist id="ollama-model-list">
+                        @foreach (var (val, label) in ModelOptions)
+                        {
+                            <option value="@val">@label</option>
+                        }
+                    </datalist>
+                </label>
+            }
+            else
+            {
+                <label>API Key <input type="password" @bind="ai.ApiKey" placeholder="@KeyPlaceholder" /></label>
+                <label>Model
+                    <select @bind="ai.Model">
+                        @foreach (var (val, label) in ModelOptions)
+                        {
+                            <option value="@val">@label</option>
+                        }
+                    </select>
+                </label>
+            }
         </div>
         @if (ai.Provider == "deepseek")
         {
             <p class="settings-hint">⚠ DeepSeek chỉ đọc chữ (không xem được ảnh tư liệu). Cần AI nhìn ảnh thì chọn Claude, ChatGPT hoặc Gemini.</p>
+        }
+        else if (ai.Provider == "ollama")
+        {
+            <p class="settings-hint">💡 Ollama chạy trực tiếp trên máy của bạn (miễn phí, riêng tư). Hãy chạy <code>ollama run qwen2.5</code> trong Terminal để sử dụng.</p>
         }
         <div class="actions">
             <button class="btn-save" @onclick="SaveConnection">Lưu</button>
@@ -397,6 +417,7 @@
         ("openai", "ChatGPT"),
         ("gemini", "Gemini"),
         ("deepseek", "DeepSeek"),
+        ("ollama", "Ollama (Local AI)"),
     ];
 
     // Model mặc định khi chọn nhà cung cấp
@@ -406,6 +427,7 @@
         ["openai"] = "gpt-4o",
         ["gemini"] = "gemini-2.5-flash",
         ["deepseek"] = "deepseek-chat",
+        ["ollama"] = "qwen2.5",
     };
 
     private string ProviderLabel => Providers.FirstOrDefault(p => p.Key == ai.Provider).Label ?? "Claude";
@@ -429,6 +451,15 @@
             ("deepseek-chat", "DeepSeek Chat (V3)"),
             ("deepseek-reasoner", "DeepSeek Reasoner (R1)"),
         ],
+        "ollama" =>
+        [
+            ("llama3.1:8b", "Llama 3.1 8B"),
+            ("qwen2.5", "Qwen 2.5 (Khuyên dùng - Giỏi tiếng Việt)"),
+            ("llama3.2", "Llama 3.2 (Nhẹ, phản hồi nhanh)"),
+            ("gemma2", "Gemma 2 (Google)"),
+            ("mistral", "Mistral 7B"),
+            ("deepseek-r1", "DeepSeek R1 (Local)"),
+        ],
         _ =>
         [
             ("claude-opus-4-8", "Claude Opus 4.8 (thông minh nhất)"),
@@ -442,6 +473,7 @@
         "openai" => "sk-...",
         "gemini" => "AIza...",
         "deepseek" => "sk-...",
+        "ollama" => "Không cần API Key (để trống)",
         _ => "sk-ant-...",
     };
 
@@ -453,6 +485,8 @@
             "Vào <a href='https://aistudio.google.com/apikey' target='_blank'>aistudio.google.com/apikey</a> → <b>Create API key</b> → copy (dạng <code>AIza...</code>). Có hạn mức miễn phí. Gemini xem được ảnh tư liệu.",
         "deepseek" =>
             "Vào <a href='https://platform.deepseek.com/api_keys' target='_blank'>platform.deepseek.com/api_keys</a> → tạo key (dạng <code>sk-...</code>). Rẻ nhất nhưng <b>không xem được ảnh</b>, chỉ đọc chữ.",
+        "ollama" =>
+            "1. Tải và cài Ollama từ <a href='https://ollama.com' target='_blank'>ollama.com</a>.<br/>2. Mở Terminal/CMD gõ <code>ollama run qwen2.5</code> để tải model.<br/>3. Địa chỉ mặc định là <code>http://localhost:11434</code> (không cần API Key).",
         _ =>
             "Vào <a href='https://console.anthropic.com' target='_blank'>console.anthropic.com</a> → <b>API Keys</b> → <b>Create Key</b> → copy (dạng <code>sk-ant-...</code>). Cần nạp tín dụng ở Billing. Claude xem được ảnh tư liệu.",
     };
@@ -462,6 +496,8 @@
         ai = Clone(Store.Ai);
         if (string.IsNullOrEmpty(ai.Provider))
             ai.Provider = "anthropic";
+        if (string.IsNullOrWhiteSpace(ai.OllamaUrl))
+            ai.OllamaUrl = "http://localhost:11434";
             
         // Phân rã ShopContext thành 3 phần nếu là JSON
         if (!string.IsNullOrWhiteSpace(ai.ShopContext))
@@ -498,9 +534,16 @@
         if (ai.Provider == key)
             return;
         ai.Provider = key;
-        // Đổi nhà cung cấp thì đổi model mặc định và xóa key cũ (khác nhà cung cấp)
-        ai.Model = DefaultModel[key];
-        ai.ApiKey = "";
+        // Đổi nhà cung cấp thì đổi model mặc định
+        ai.Model = DefaultModel.TryGetValue(key, out var m) ? m : "qwen2.5";
+        if (key != "ollama")
+        {
+            ai.ApiKey = "";
+        }
+        if (key == "ollama" && string.IsNullOrWhiteSpace(ai.OllamaUrl))
+        {
+            ai.OllamaUrl = "http://localhost:11434";
+        }
     }
 
     private async Task SaveConnection()

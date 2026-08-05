@@ -22,7 +22,9 @@ public class AiSuggestionService(
 {
     private const int MaxKnowledgeImages = 6;
 
-    public bool IsConfigured => !string.IsNullOrEmpty(settings.Ai.ApiKey);
+    public bool IsConfigured => settings.Ai.Provider?.ToLowerInvariant() == "ollama"
+        ? !string.IsNullOrWhiteSpace(settings.Ai.OllamaUrl)
+        : !string.IsNullOrEmpty(settings.Ai.ApiKey);
 
     // Một ảnh tư liệu đã đọc sẵn: base64 + kiểu MIME
     private record LoadedImage(string Base64, string MediaType, string Caption);
@@ -30,23 +32,26 @@ public class AiSuggestionService(
     public async Task<string> SuggestReplyAsync(Conversation conversation, IReadOnlyList<Message> messages, bool isAutoPilot = false, CancellationToken ct = default)
     {
         var opts = settings.Ai;
-        if (string.IsNullOrEmpty(opts.ApiKey))
+        var provider = opts.Provider?.ToLowerInvariant() ?? "anthropic";
+        if (provider != "ollama" && string.IsNullOrEmpty(opts.ApiKey))
             throw new InvalidOperationException("Chưa cấu hình AI — vào tab Trợ lý AI điền API key");
+        if (provider == "ollama" && string.IsNullOrWhiteSpace(opts.OllamaUrl))
+            throw new InvalidOperationException("Chưa cấu hình Ollama — vào tab Trợ lý AI điền URL Ollama");
 
         var system = await BuildSystemPromptAsync(opts, isAutoPilot);
         var userText = BuildUserText(conversation, messages, isAutoPilot);
         var images = await LoadImagesAsync();
 
-        var provider = opts.Provider?.ToLowerInvariant() ?? "anthropic";
         var suggestion = provider switch
         {
             "openai" => await OpenAiCompatibleAsync("https://api.openai.com/v1/chat/completions", opts, system, userText, images, includeImages: true, ct),
             "deepseek" => await OpenAiCompatibleAsync("https://api.deepseek.com/chat/completions", opts, system, userText, images, includeImages: false, ct),
+            "ollama" => await OpenAiCompatibleAsync($"{opts.OllamaUrl.TrimEnd('/')}/v1/chat/completions", opts, system, userText, images, includeImages: false, ct),
             "gemini" => await GeminiAsync(opts, system, userText, images, ct),
             _ => await AnthropicAsync(opts, system, userText, images, ct),
         };
 
-        suggestion = suggestion.Trim();
+        suggestion = CleanReplyText(suggestion);
         if (string.IsNullOrEmpty(suggestion))
             throw new InvalidOperationException("AI không trả về gợi ý (có thể do nội dung bị từ chối)");
 
@@ -56,6 +61,56 @@ public class AiSuggestionService(
             suggestion = suggestion[..idx].Trim();
         }
         return suggestion;
+    }
+
+    private static string CleanReplyText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return "";
+
+        // 1. Cắt bỏ mọi phần sau "Lưu ý:", "Ghi chú:", "Note:"
+        var noteIdx = text.IndexOf("Lưu ý:", StringComparison.OrdinalIgnoreCase);
+        if (noteIdx >= 0) text = text[..noteIdx];
+
+        var noteIdx2 = text.IndexOf("Ghi chú:", StringComparison.OrdinalIgnoreCase);
+        if (noteIdx2 >= 0) text = text[..noteIdx2];
+
+        // 2. Nếu có "Hoặc:", chỉ lấy phương án trả lời đầu tiên
+        var orIdx = text.IndexOf("Hoặc:", StringComparison.OrdinalIgnoreCase);
+        if (orIdx >= 0) text = text[..orIdx];
+
+        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var cleanLines = new List<string>();
+
+        foreach (var line in lines)
+        {
+            var l = line;
+
+            // Bỏ các câu dẫn dắt meta
+            if (l.StartsWith("Câu trả lời", StringComparison.OrdinalIgnoreCase) ||
+                l.StartsWith("Gợi ý", StringComparison.OrdinalIgnoreCase) ||
+                l.StartsWith("Phương án", StringComparison.OrdinalIgnoreCase) ||
+                l.StartsWith("Khách:", StringComparison.OrdinalIgnoreCase) ||
+                l.StartsWith("Khách hàng:", StringComparison.OrdinalIgnoreCase) ||
+                l.Contains("{TỔNG_TIỀN}") || l.Contains("{T%E1%BB%95NG_TI%E1%BB%80N}") || l.Contains("Bạn chỉ cần thay số tiền"))
+            {
+                continue;
+            }
+
+            if (l.StartsWith("Nhân viên:", StringComparison.OrdinalIgnoreCase))
+                l = l["Nhân viên:".Length..].Trim();
+            else if (l.StartsWith("Shop:", StringComparison.OrdinalIgnoreCase))
+                l = l["Shop:".Length..].Trim();
+            else if (l.StartsWith("Trả lời:", StringComparison.OrdinalIgnoreCase))
+                l = l["Trả lời:".Length..].Trim();
+
+            // Cắt bỏ dấu ngoặc kép bọc ngoài câu trả lời
+            l = l.Trim('"', '“', '”', '\'');
+
+            if (!string.IsNullOrWhiteSpace(l))
+                cleanLines.Add(l);
+        }
+
+        return string.Join("\n", cleanLines).Trim();
     }
 
     // ===== Ngữ cảnh dùng chung cho mọi nhà cung cấp =====
@@ -69,10 +124,14 @@ public class AiSuggestionService(
             "2. TUYỆT ĐỐI KHÔNG HỎI HOẶC NHẮC VỀ ĐƠN HÀNG CŨ (Không hỏi 'có muốn gộp đơn cũ không', không nhắc 'đơn đã thanh toán trước đó', không nhắc 'Đơn cũ (...)').\n" +
             "3. TUYỆT ĐỐI KHÔNG NÓI HAY NHẮC VỀ BÁNH GATO nếu tin nhắn mới nhất của khách không chủ động hỏi về bánh gato!\n" +
             "4. Hãy luôn kiểm tra 'Danh sách thực đơn & Bảng giá chính thức (iPOS)' ở bên dưới để tư vấn món cho khách.\n" +
-            "- Nếu món khách hỏi CÓ trong iPOS: Báo có và tư vấn giá bán / mô tả sản phẩm cho khách theo đúng danh sách.\n" +
-            "- Nếu món khách hỏi KHÔNG CÓ trong iPOS: Báo tiệm hiện tại chưa có món đó một cách lịch sự.\n" +
+            "4. QUY TẮC BÁO GIÁ & TƯ VẤN SẢN PHẨM (TRỌNG TÂM): CHỈ TRẢ LỜI ĐÚNG VẤN ĐỀ KHÁCH HỎI!\n" +
+            "- Khi khách hỏi về sản phẩm hoặc bảng giá (VD: 'bảng giá bánh nướng', 'có dẻo kem trứng muối không'): Hãy tra cứu ngay danh sách thực đơn iPOS bên dưới. BÁO ĐÚNG TÊN MÓN VÀ GIÁ BÁN CHÍNH XÁC của các món khách đang hỏi. Nếu không có trong danh sách thì báo tiệm chưa có món đó.\n" +
+            "- TUYỆT ĐỐI KHÔNG dùng câu chào mẫu chung chung hay liệt kê các món không liên quan khi khách đang hỏi về một sản phẩm/bảng giá cụ thể.\n" +
             "5. QUY TẮC LẬP ĐƠN HÀNG MỚI: CHỈ TÍNH VÀ TỔNG HỢP CÁC MÓN MÀ KHÁCH TRỰC TIẾP ĐẶT TRONG TIN NHẮN MỚI NÀY! TUYỆT ĐỐI KHÔNG TỰ CỘNG THÊM CÁC ĐƠN CŨ HOẶC MÓN TRONG LỊCH SỬ THỬ NGHIỆM VÀO ĐƠN MỚI.\n" +
-            "6. Trả lời lịch sự, thân thiện, ngắn gọn, đi thẳng vào nhu cầu của khách.\n");
+            "6. QUY TẮC PHONG CÁCH XƯNG HÔ & TRẢ LỜI NGẮN GỌN (CHAT ZALO/FACEBOOK):\n" +
+            "- Xưng hô tự nhiên, thân thiện: Dùng 'Dạ', 'mình', 'bạn', 'em'. Trả lời cực kỳ ngắn gọn (1 đến 2 câu), đi thẳng vào câu hỏi.\n" +
+            "- Khi khách CHỈ chào hỏi ('xin chào', 'hi', 'bạn ơi'): CHỈ chào lại ngắn gọn: 'Dạ bạn cần mình tư vấn gì ạ?'. KHÔNG đọc danh sách món.\n" +
+            "7. TUYỆT ĐỐI CHỈ TRẢ VỀ NỘI DUNG CÂU NÓI CỦA NHÂN VIÊN. KHÔNG in các tiền tố 'Khách:', 'Nhân viên:', 'Shop:', KHÔNG nhại lại hoặc tự viết tiếp lượt thoại của khách.\n");
 
         if (isAutoPilot)
         {
@@ -184,17 +243,26 @@ public class AiSuggestionService(
             transcript.AppendLine($"{who}: {text}");
         }
 
+        bool customerAskedPayment = lastInbound.Contains("chuyển khoản") || lastInbound.Contains("ck") ||
+                                    lastInbound.Contains("thanh toán") || lastInbound.Contains("stk") ||
+                                    lastInbound.Contains("tài khoản") || lastInbound.Contains("qr") ||
+                                    lastInbound.Contains("chốt đơn") || lastInbound.Contains("mua") ||
+                                    lastInbound.Contains("đặt");
+
         var bankInfo = "";
-        if (isAutoPilot && !string.IsNullOrEmpty(settings.Ai.BankName) && !string.IsNullOrEmpty(settings.Ai.BankAccount))
+        if (customerAskedPayment && !string.IsNullOrEmpty(settings.Ai.BankName) && !string.IsNullOrEmpty(settings.Ai.BankAccount))
         {
-            bankInfo = $"\n\n[HƯỚNG DẪN TẠO MÃ QR THANH TOÁN]:\n" +
-                       $"Nếu khách có nhu cầu chuyển khoản trước, bạn gửi link ảnh QR sau cho khách:\n" +
+            bankInfo = $"\n\n[HƯỚNG DẪN GỬI MÃ QR THANH TOÁN]:\n" +
+                       $"Khách đang có nhu cầu chốt đơn / thanh toán. Hãy tính tổng tiền và gửi link ảnh QR sau cho khách:\n" +
                        $"https://img.vietqr.io/image/{settings.Ai.BankName}-{settings.Ai.BankAccount}-compact2.jpg?amount={{TỔNG_TIỀN}}&accountName={Uri.EscapeDataString(settings.Ai.BankAccountName)}\n" +
-                       $"Thay {{TỔNG_TIỀN}} bằng tổng tiền đơn (viết liền không phẩy). Khách có thể chuyển khoản trước hoặc thanh toán sau khi nhận hàng đều được, không ép khách phải thanh toán trước mới chốt đơn.";
+                       $"Chú ý: Thay {{TỔNG_TIỀN}} bằng con số tổng tiền thực tế (viết liền không phẩy, VD: 130000). TUYỆT ĐỐI KHÔNG để nguyên chữ '{{TỔNG_TIỀN}}' cho khách.";
         }
 
-        return $"Đây là hội thoại với khách qua kênh {conversation.Channel}:\n\n{transcript}{bankInfo}\n\n" +
-               "Soạn giúp tôi câu trả lời tiếp theo để gửi cho khách (Chú ý: Mỗi lần nhắn mua là tạo một đơn mới hoàn toàn, tuyệt đối không nhắc đơn cũ hay bánh gato nếu khách không hỏi).";
+        bool isJustGreeting = lastInbound is "xin chào" or "chào shop" or "chào bạn" or "hi" or "hello" or "bạn ơi" or "dạ chào shop" or "alo";
+        var greetingHint = isJustGreeting ? "\n(Ghi chú: Khách vừa chào hỏi. Hãy trả lời tự nhiên cực kỳ ngắn gọn kiểu: 'Dạ bạn cần mình tư vấn gì ạ?')" : "";
+
+        return $"Lịch sử hội thoại với khách qua kênh {conversation.Channel}:\n\n{transcript}{bankInfo}\n\n" +
+               $"YÊU CẦU: Viết DUY NHẤT câu trả lời tiếp theo để gửi cho khách. KHÔNG ghi 'Câu trả lời tiếp theo:', KHÔNG ghi 'Hoặc:', KHÔNG thêm 'Lưu ý:', KHÔNG đưa ra nhiều lựa chọn. Chỉ trả về đúng 1 câu thoại duy nhất của nhân viên.{greetingHint}";
     }
 
     private async Task<List<LoadedImage>> LoadImagesAsync()
@@ -292,7 +360,7 @@ public class AiSuggestionService(
         var payload = new
         {
             model = opts.Model,
-            max_tokens = 600,
+            max_tokens = 250,
             messages = new object[]
             {
                 new { role = "system", content = system },
@@ -305,7 +373,10 @@ public class AiSuggestionService(
         {
             Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
         };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", opts.ApiKey);
+        if (!string.IsNullOrWhiteSpace(opts.ApiKey))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", opts.ApiKey);
+        }
 
         var response = await client.SendAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
